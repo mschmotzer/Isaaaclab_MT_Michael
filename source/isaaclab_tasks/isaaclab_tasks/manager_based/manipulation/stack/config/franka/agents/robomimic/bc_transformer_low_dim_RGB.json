@@ -1,0 +1,198 @@
+{
+    "algo_name": "bc",
+    "experiment": {
+        "name": "R3MConv:unfreezed_with_2500",
+        "validate": false,
+        "logging": {
+            "terminal_output_to_txt": true,
+            "log_tb": true,
+            "log_wandb": false,
+            "wandb_proj_name": "debug"
+        },
+        "save": {
+            "enabled": true,
+            "every_n_seconds": null,
+            "every_n_epochs": 250,
+            "epochs": [],
+            "on_best_validation": false,
+            "on_best_rollout_return": false,
+            "on_best_rollout_success_rate": true
+        },
+        "epoch_every_n_steps": 800,
+        "validation_epoch_every_n_steps": 10,
+        "env": null,
+        "additional_envs": null,
+        "render": false,
+        "render_video": false,
+        "keep_all_videos": false,
+        "video_skip": 5,
+        "rollout": {
+            "enabled": false,
+            "n": 50,
+            "horizon": 400,
+            "rate": 50,
+            "warmstart": 0,
+            "terminate_on_success": true
+        }
+    },
+    "train": {
+        "data": null,
+        "output_dir": "../bc_transformer_trained_models",
+        "num_data_workers": 4,
+        "hdf5_cache_mode":"low_dim",
+        "hdf5_use_swmr": true,
+        "hdf5_normalize_obs": false,
+        "hdf5_filter_key": null,
+        "seq_length": 42,
+        "pad_seq_length": false,
+        "frame_stack": 1,
+        "pad_frame_stack": true,
+        "dataset_keys": ["eef_pos",
+                    "eef_quat",
+                    "gripper_pos",
+                    "actions","image","image2"
+        ],
+        "goal_mode": null,
+        "hdf5_load_next_obs": false,
+        "cuda": true,
+        "batch_size": 16,
+        "num_epochs": 2000,
+        "seed": 1
+    },
+    "algo": {
+        "optim_params": {
+            "policy": {
+                "optimizer_type": "adamw",
+                 "learning_rate": {
+                    "initial": 0.0001,
+                    "decay_factor": 0.1,
+                    "epoch_schedule": [],
+                    "scheduler_type": "multistep"
+                },
+                "regularization": {
+                    "L2": 1.0e-5
+                }
+            }
+        },
+        "loss": {
+            "l2_weight": 1.0,
+            "l1_weight": 0.0,
+            "cos_weight": 0.0
+        },
+        "actor_layer_dims": [],
+        "gaussian": {
+            "enabled": false
+        },
+        "gmm": {
+            "enabled": true,
+            "num_modes": 3,
+            "min_std": 0.0001,
+            "std_activation": "softplus",
+            "low_noise_eval": true
+        },
+        "vae": {
+            "enabled": false
+        },
+        "rnn": {
+            "enabled": false
+        },
+        "transformer": {
+            "enabled": true,
+            "supervise_all_steps": true,
+            "num_layers": 8,
+            "context_length": 2,
+            "embed_dim": 512,
+            "num_heads": 8,
+            "activation": "gelu",
+            "action_chunk_size": 40
+           }
+    },
+    "observation": {
+        "modalities": {
+            "obs": {
+                "low_dim": ["eef_pos",
+                    "eef_quat",
+                    "gripper_pos",
+                    "actions"
+                ],
+                "rgb": ["image","image2"],
+                "depth": [],
+                "scan": []
+            },
+            "goal": {
+                "low_dim": [],
+                "rgb": [],
+                "depth": [],
+                "scan": []
+            }
+        },
+        "encoder": {
+            "low_dim":{"eef_pos": {
+                "core_class": "NormEncoder",
+                "core_kwargs": {},
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            }, 
+            "eef_quat": {
+                "core_class": "NormEncoder",
+                "core_kwargs": {},
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            },
+            "gripper_pos": {
+                "core_class": "NormEncoder",
+                "core_kwargs": {},
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            },
+            "object": {
+                "core_class": "NormEncoder",
+                "core_kwargs": {},
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            },
+            "actions": {
+                "core_class": "NormEncoder",
+                "core_kwargs": {},
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            }
+            },
+            "rgb":{
+            "image": {
+                "core_class": "VisualCore_MSC",
+                "core_kwargs": {
+                        "backbone_class" : "R3MConv",
+                        "pool_class":null,
+                        "backbone_kwargs":{"model_name":"resnet18", "freeze":false},
+                        "pool_kwargs": null,
+                        
+                        "feature_dimension": null,
+                        "mlp_layer_dims": [256],
+                        "mlp_output_dim": 128,
+                        "mlp_activation": "tanh"
+                },
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            },
+            "image2": {
+                "core_class": "VisualCore_MSC",
+                "core_kwargs": {
+                        "backbone_class" : "R3MConv",
+                        "pool_class":null,
+                        "backbone_kwargs":{"model_name":"resnet18", "freeze":false},
+                        "pool_kwargs": null,
+                        
+                        "feature_dimension": null,
+                        "mlp_layer_dims": [256],
+                        "mlp_output_dim": 128,
+                        "mlp_activation": "tanh"
+                },
+                "obs_randomizer_class": null,
+                "obs_randomizer_kwargs": {}
+            }
+            }
+        }
+    }
+}
+

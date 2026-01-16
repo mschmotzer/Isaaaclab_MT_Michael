@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
@@ -69,6 +69,9 @@ x-default-isaac-lab-volumes: &default-isaac-lab-volumes
   - type: bind
     source: .isaac-lab-docker-history
     target: ${DOCKER_USER_HOME}/.bash_history
+  - type: bind
+    source: /home/pdz/MasterThesis_MSC
+    target: ${DOCKER_USER_HOME}/euler_data
 
 x-default-isaac-lab-environment: &default-isaac-lab-environment
   - ISAACSIM_PATH=${DOCKER_ISAACLAB_PATH}/_isaac_sim
@@ -100,6 +103,7 @@ services:
     container_name: isaac-lab-base${DOCKER_NAME_SUFFIX-}
     environment: *default-isaac-lab-environment
     volumes: *default-isaac-lab-volumes
+    shm_size: 16gb # shared red/write memory size
     network_mode: host
     deploy: *default-isaac-lab-deploy
     # This is the entrypoint for the container
@@ -129,6 +133,7 @@ services:
     container_name: isaac-lab-ros2${DOCKER_NAME_SUFFIX-}
     environment: *default-isaac-lab-environment
     volumes: *default-isaac-lab-volumes
+    shm_size: 16gb # shared red/write memory size
     network_mode: host
     deploy: *default-isaac-lab-deploy
     # This is the entrypoint for the container

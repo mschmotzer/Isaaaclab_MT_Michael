@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2024-2025, The Isaac Lab Project Developers.
 # All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -27,7 +27,11 @@ class FrankaCubeStackIKAbsMimicEnv(ManagerBasedRLMimicEnv):
         return PoseUtils.make_pose(eef_pos, PoseUtils.matrix_from_quat(eef_quat))
 
     def target_eef_pose_to_action(
-        self, target_eef_pose_dict: dict, gripper_action_dict: dict, noise: float | None = None, env_id: int = 0
+        self, 
+        target_eef_pose_dict: dict, 
+        gripper_action_dict: dict, 
+        action_noise_dict: dict | None = None, 
+        env_id: int = 0
     ) -> torch.Tensor:
         """Convert target pose to action.
 
@@ -46,7 +50,7 @@ class FrankaCubeStackIKAbsMimicEnv(ManagerBasedRLMimicEnv):
                 with keys as eef names and values as pose tensors.
             gripper_action_dict: Dictionary containing gripper action(s),
                 with keys as eef names and values as action tensors.
-            noise: Optional noise magnitude to apply to the pose action for exploration.
+            action_noise_dict: Dictionary containing noise magnitudes for each end-effector.
                 If provided, random noise is generated and added to the pose action.
             env_id: Environment ID for multi-environment setups, defaults to 0.
 
@@ -60,11 +64,25 @@ class FrankaCubeStackIKAbsMimicEnv(ManagerBasedRLMimicEnv):
         # get gripper action for single eef
         (gripper_action,) = gripper_action_dict.values()
 
-        # add noise to action
-        pose_action = torch.cat([target_pos, PoseUtils.quat_from_matrix(target_rot)], dim=0)
-        if noise is not None:
-            noise = noise * torch.randn_like(pose_action)
-            pose_action += noise
+        # convert rotation matrix to quaternion and ensure it's normalized
+        target_quat = PoseUtils.quat_from_matrix(target_rot)
+        target_quat = target_quat / torch.norm(target_quat, dim=-1, keepdim=True)  # normalize quaternion
+        
+        # add noise to action if specified
+        pose_action = torch.cat([target_pos, target_quat], dim=0)
+        if action_noise_dict is not None:
+            eef_name = list(target_eef_pose_dict.keys())[0]
+            if eef_name in action_noise_dict:
+                noise_magnitude = action_noise_dict[eef_name]
+                # Add noise to position
+                pos_noise = noise_magnitude * torch.randn_like(target_pos)
+                # Add smaller noise to quaternion to avoid large rotational changes
+                quat_noise = (noise_magnitude * 0.1) * torch.randn_like(target_quat)
+                
+                pose_action[:3] += pos_noise
+                pose_action[3:7] += quat_noise
+                # Re-normalize quaternion after adding noise
+                pose_action[3:7] = pose_action[3:7] / torch.norm(pose_action[3:7])
 
         return torch.cat([pose_action, gripper_action], dim=0).unsqueeze(0)
 

@@ -20,7 +20,7 @@
         "env": null,
         "additional_envs": null,
         "render": false,
-        "render_video": false,
+        "render_video": true,
         "rollout": {
             "enabled": false
         }

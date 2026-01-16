@@ -69,3 +69,15 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+# Data & experiments
+*.hdf5
+robomimic/
+
+# Copies & temp files
+* copy.py
+* copy.json
+
+# Python cache
+__pycache__/
+*.pyc

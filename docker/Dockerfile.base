@@ -94,6 +94,15 @@ RUN --mount=type=cache,target=${DOCKER_USER_HOME}/.cache/pip \
 # HACK: Remove install of quadprog dependency
 RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip uninstall -y quadprog
 
+# Replace with custom robomimic
+COPY ./robomimic /tmp/robomimic
+RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip uninstall -y robomimic && \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install /tmp/robomimic && \
+    rm -rf /tmp/robomimic
+
+# Install r3m from GitHub (Facebook Research)
+RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install git+https://github.com/facebookresearch/r3m.git
+
 # aliasing isaaclab.sh and python for convenience
 RUN echo "export ISAACLAB_PATH=${ISAACLAB_PATH}" >> ${HOME}/.bashrc && \
     echo "alias isaaclab=${ISAACLAB_PATH}/isaaclab.sh" >> ${HOME}/.bashrc && \

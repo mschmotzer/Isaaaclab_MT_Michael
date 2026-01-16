@@ -161,7 +161,7 @@ def main():
         input_file=args_cli.input_file,
         success_term=success_term,
         pause_subtask=args_cli.pause_subtask,
-        motion_planners=motion_planners,  # Pass the motion planners dictionary
+        #motion_planners=motion_planners,   Pass the motion planners dictionary
     )
 
     try:

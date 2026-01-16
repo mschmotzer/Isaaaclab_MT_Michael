@@ -1,7 +1,8 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2024-2025, The Isaac Lab Project Developers.
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Script to replay demonstrations with Isaac Lab environments."""
 
 """Launch Isaac Sim Simulator first."""
@@ -33,12 +34,6 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
-    "--validate_success_rate",
-    action="store_true",
-    default=False,
-    help="Validate the replay success rate using the task environment termination criteria",
-)
-parser.add_argument(
     "--enable_pinocchio",
     action="store_true",
     default=False,
@@ -67,12 +62,11 @@ import gymnasium as gym
 import os
 import torch
 
-from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
+from isaaclab.devices import Se3Keyboard
 from isaaclab.utils.datasets import EpisodeData, HDF5DatasetFileHandler
 
 if args_cli.enable_pinocchio:
     import isaaclab_tasks.manager_based.manipulation.pick_place  # noqa: F401
-    import isaaclab_tasks.manager_based.locomanipulation.pick_place  # noqa: F401
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
@@ -141,7 +135,7 @@ def main():
         episode_indices_to_replay = list(range(episode_count))
 
     if args_cli.task is not None:
-        env_name = args_cli.task.split(":")[-1]
+        env_name = args_cli.task
     if env_name is None:
         raise ValueError("Task/env name was not specified nor found in the dataset.")
 
@@ -149,26 +143,15 @@ def main():
 
     env_cfg = parse_env_cfg(env_name, device=args_cli.device, num_envs=num_envs)
 
-    # extract success checking function to invoke in the main loop
-    success_term = None
-    if args_cli.validate_success_rate:
-        if hasattr(env_cfg.terminations, "success"):
-            success_term = env_cfg.terminations.success
-            env_cfg.terminations.success = None
-        else:
-            print(
-                "No success termination term was found in the environment."
-                " Will not be able to mark recorded demos as successful."
-            )
-
     # Disable all recorders and terminations
     env_cfg.recorders = {}
     env_cfg.terminations = {}
+    env_cfg.events = {}
 
     # create environment from loaded config
-    env = gym.make(args_cli.task, cfg=env_cfg).unwrapped
+    env = gym.make(env_name, cfg=env_cfg).unwrapped
 
-    teleop_interface = Se3Keyboard(Se3KeyboardCfg(pos_sensitivity=0.1, rot_sensitivity=0.1))
+    teleop_interface = Se3Keyboard(pos_sensitivity=0.1, rot_sensitivity=0.1)
     teleop_interface.add_callback("N", play_cb)
     teleop_interface.add_callback("B", pause_cb)
     print('Press "B" to pause and "N" to resume the replayed actions.')
@@ -193,20 +176,11 @@ def main():
     # simulate environment -- run everything in inference mode
     episode_names = list(dataset_file_handler.get_episode_names())
     replayed_episode_count = 0
-    recorded_episode_count = 0
-
-    # Track current episode indices for each environment
-    current_episode_indices = [None] * num_envs
-
-    # Track failed demo IDs
-    failed_demo_ids = []
-
     with contextlib.suppress(KeyboardInterrupt) and torch.inference_mode():
         while simulation_app.is_running() and not simulation_app.is_exiting():
             env_episode_data_map = {index: EpisodeData() for index in range(num_envs)}
             first_loop = True
             has_next_action = True
-            episode_ended = [False] * num_envs
             while has_next_action:
                 # initialize actions with idle action so those without next action will not move
                 actions = idle_action
@@ -214,50 +188,51 @@ def main():
                 for env_id in range(num_envs):
                     env_next_action = env_episode_data_map[env_id].get_next_action()
                     if env_next_action is None:
-                        # check if the episode is successful after the whole episode_data is
-                        if (
-                            (success_term is not None)
-                            and (current_episode_indices[env_id]) is not None
-                            and (not episode_ended[env_id])
-                        ):
-                            if bool(success_term.func(env, **success_term.params)[env_id]):
-                                recorded_episode_count += 1
-                                plural_trailing_s = "s" if recorded_episode_count > 1 else ""
-
-                                print(
-                                    f"Successfully replayed {recorded_episode_count} episode{plural_trailing_s} out"
-                                    f" of {replayed_episode_count} demos."
-                                )
-                            else:
-                                # if not successful, add to failed demo IDs list
-                                if (
-                                    current_episode_indices[env_id] is not None
-                                    and current_episode_indices[env_id] not in failed_demo_ids
-                                ):
-                                    failed_demo_ids.append(current_episode_indices[env_id])
-
-                            episode_ended[env_id] = True
-
                         next_episode_index = None
                         while episode_indices_to_replay:
                             next_episode_index = episode_indices_to_replay.pop(0)
-
                             if next_episode_index < episode_count:
-                                episode_ended[env_id] = False
                                 break
                             next_episode_index = None
 
                         if next_episode_index is not None:
                             replayed_episode_count += 1
-                            current_episode_indices[env_id] = next_episode_index
                             print(f"{replayed_episode_count :4}: Loading #{next_episode_index} episode to env_{env_id}")
                             episode_data = dataset_file_handler.load_episode(
                                 episode_names[next_episode_index], env.device
                             )
                             env_episode_data_map[env_id] = episode_data
-                            # Set initial state for the new episode
+
+                            # Extract the initial state from the dataset
                             initial_state = episode_data.get_initial_state()
-                            env.reset_to(initial_state, torch.tensor([env_id], device=env.device), is_relative=True)
+
+                            # Use the complete initial state from the dataset
+                            if initial_state is not None:
+                                print(f"Resetting environment {env_id} to initial state from dataset")
+                                
+                                # Print the actual initial state data
+                                print("Initial state contents:")
+                                for asset_type, assets in initial_state.items():
+                                    print(f"  {asset_type}:")
+                                    for asset_name, asset_data in assets.items():
+                                        print(f"    {asset_name}:")
+                                        for state_key, state_value in asset_data.items():
+                                            if hasattr(state_value, 'cpu'):
+                                                state_array = state_value.cpu().numpy()
+                                                if state_array.size > 10:  # If array is large, show shape and first few values
+                                                    print(f"      {state_key}: shape={state_array.shape}, first_values=[{', '.join([f'{val:.6f}' for val in state_array.flatten()[:5]])}...]")
+                                                else:
+                                                    state_str = ", ".join([f"{val:.6f}" for val in state_array.flatten()])
+                                                    print(f"      {state_key}: [{state_str}]")
+                                            else:
+                                                print(f"      {state_key}: {state_value}")
+                                print("I replay from the initial state above ^^^")
+                                env.reset_to(initial_state, torch.tensor([env_id], device=env.device), is_relative=False)
+                            else:
+                                # Fallback to regular reset if no initial state is available
+                                print(f"No initial state found in dataset, using regular reset for env_{env_id}")
+                                env.reset(torch.tensor([env_id], device=env.device))
+
                             # Get the first action for the new episode
                             env_next_action = env_episode_data_map[env_id].get_next_action()
                             has_next_action = True
@@ -272,7 +247,53 @@ def main():
                     while is_paused:
                         env.sim.render()
                         continue
-                env.step(actions)
+                obs, _ ,_ , _, info= env.step(actions)
+
+                # Comprehensive logging for debugging
+                current_state = env.scene.get_state(is_relative=False)
+                # With absolute joint control, actions directly represent desired joint positions
+                for env_idx in range(num_envs):
+                    if env_idx in env_episode_data_map and env_episode_data_map[env_idx].next_action_index > 0:
+                        episode_data = env_episode_data_map[env_idx]
+                        action_step = episode_data.next_action_index - 1
+                        
+                        print(f"\n🤖 Environment {env_idx} | Step {action_step}")
+                        print("-" * 40)
+                        
+                        # Action is now absolute joint position target
+                        applied_action = actions[env_idx].cpu().numpy()
+                        action_str = ", ".join([f"{val:.6f}" for val in applied_action])
+                        print(f"📝 Target Action: [{action_str}]")
+                        
+                        # Current joint positions should move toward target
+                        if "articulation" in current_state and "robot" in current_state["articulation"]:
+                            joint_pos = current_state["articulation"]["robot"]["joint_position"][env_idx].cpu().numpy()
+                            joint_pos_str = ", ".join([f"{val:.6f}" for val in joint_pos])
+                            print(f"🔧 Current Joint Positions: [{joint_pos_str}]")
+                            
+                            # Split into arm and gripper for comparison
+                            arm_action = applied_action[:7]  # First 7 elements are arm joints
+                            arm_positions = joint_pos[:7]   # First 7 elements are arm joints
+                            cube_pos = obs["policy"]["cube_positions"]
+                            print(f"📦 Cube Position: {cube_pos}")
+                            ee_pos = obs["policy"]["eef_pos"]
+                            print(f"✋ End-Effector Position: {ee_pos}")
+                            # Show arm joint errors
+                            arm_error = arm_action - arm_positions
+                            arm_error_str = ", ".join([f"{val:.6f}" for val in arm_error])
+                            print(f"📏 Arm Position Error: [{arm_error_str}]")
+                            
+                            # Handle gripper separately
+                            if len(applied_action) > 7:
+                                gripper_action = applied_action[7]  # Single gripper action
+                                gripper_positions = joint_pos[7:9]  # Two gripper joint positions
+                                gripper_pos_str = ", ".join([f"{val:.6f}" for val in gripper_positions])
+                                print(f"🤏 Gripper Action: {gripper_action:.6f}")
+                                print(f"🤏 Gripper Positions: [{gripper_pos_str}]")
+                                
+                                # Gripper error (action applies to both fingers)
+                                gripper_error = gripper_action - gripper_positions[0]  # Compare to one finger
+                                print(f"📏 Gripper Error: {gripper_error:.6f}")
 
                 if state_validation_enabled:
                     state_from_dataset = env_episode_data_map[0].get_next_state()
@@ -292,16 +313,6 @@ def main():
     # Close environment after replay in complete
     plural_trailing_s = "s" if replayed_episode_count > 1 else ""
     print(f"Finished replaying {replayed_episode_count} episode{plural_trailing_s}.")
-
-    # Print success statistics only if validation was enabled
-    if success_term is not None:
-        print(f"Successfully replayed: {recorded_episode_count}/{replayed_episode_count}")
-
-        # Print failed demo IDs if any
-        if failed_demo_ids:
-            print(f"\nFailed demo IDs ({len(failed_demo_ids)} total):")
-            print(f"  {sorted(failed_demo_ids)}")
-
     env.close()
 
 

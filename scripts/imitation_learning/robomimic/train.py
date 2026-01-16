@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
@@ -59,7 +59,6 @@ import argparse
 # Third-party imports
 import gymnasium as gym
 import h5py
-import importlib
 import json
 import numpy as np
 import os
@@ -85,7 +84,6 @@ from robomimic.utils.log_utils import DataLogger, PrintLogger
 
 # Isaac Lab imports (needed so that environment is registered)
 import isaaclab_tasks  # noqa: F401
-import isaaclab_tasks.manager_based.locomanipulation.pick_place  # noqa: F401
 import isaaclab_tasks.manager_based.manipulation.pick_place  # noqa: F401
 
 
@@ -135,7 +133,7 @@ def normalize_hdf5_actions(config: Config, log_dir: str) -> str:
     return normalized_path
 
 
-def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: str):
+def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: str, checkpoint_path: str = None):
     """Train a model using the algorithm specified in config.
 
     Args:
@@ -173,7 +171,7 @@ def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: s
 
     # load basic metadata from training file
     print("\n============= Loaded Environment Metadata =============")
-    env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=config.train.data)
+    env_meta = FileUtils.get_env_metadata_from_dataset(config.train.data)
     shape_meta = FileUtils.get_shape_metadata_from_dataset(
         dataset_path=config.train.data, all_obs_keys=config.all_obs_keys, verbose=True
     )
@@ -203,10 +201,11 @@ def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: s
             envs[env.name] = env
             print(envs[env.name])
 
-    print("")
+
 
     # setup for a new training run
     data_logger = DataLogger(log_dir, config=config, log_tb=config.experiment.logging.log_tb)
+    # Create the model using Robomimic's algorithm factory
     model = algo_factory(
         algo_name=config.algo_name,
         config=config,
@@ -234,17 +233,30 @@ def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: s
     obs_normalization_stats = None
     if config.train.hdf5_normalize_obs:
         obs_normalization_stats = trainset.get_obs_normalization_stats()
-
+    def worker_init_fn(worker_id):
+        """
+        Reset the HDF5 file handle in each worker process.
+        This is critical to avoid memory leaks with multiple data workers.
+        """
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            dataset = worker_info.dataset
+            # Close any inherited file handle from parent process
+            dataset.close_and_delete_hdf5_handle()
     # initialize data loaders
     train_loader = DataLoader(
         dataset=trainset,
         sampler=train_sampler,
         batch_size=config.train.batch_size,
         shuffle=(train_sampler is None),
-        num_workers=config.train.num_data_workers,
+        num_workers=2,#config.train.num_data_workers,
         drop_last=True,
-    )
+        #prefetch_factor=1, 
+        worker_init_fn=worker_init_fn,  
+        #persistent_workers=True if config.train.num_data_workers > 0 else False,
 
+
+    )
     if config.experiment.validate:
         # cap num workers for validation dataset at 1
         num_workers = min(config.train.num_data_workers, 1)
@@ -263,15 +275,26 @@ def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: s
     # main training loop
     best_valid_loss = None
     last_ckpt_time = time.time()
-
+    if checkpoint_path is not None:
+        print(f"Loading checkpoint from {checkpoint_path}")
+        
+        # Load the checkpoint
+        checkpoint_dict = torch.load(checkpoint_path, map_location=device)
+        
+        # Load model weights
+        model.deserialize(checkpoint_dict["model"])
+        print("Loaded model weights from checkpoint")
+        
     # number of learning steps per epoch (defaults to a full dataset pass)
     train_num_steps = config.experiment.epoch_every_n_steps
     valid_num_steps = config.experiment.validation_epoch_every_n_steps
 
+    # Detailed training (forward pass, loss computation, backpropagation, optimizer step) is done in TrainUtils.run_epoch
+    # model.train_on_batch is called within run_epoch, which handles the forward pass, loss computation, and optimizer step.
     for epoch in range(1, config.train.num_epochs + 1):  # epoch numbers start at 1
         step_log = TrainUtils.run_epoch(model=model, data_loader=train_loader, epoch=epoch, num_steps=train_num_steps)
         model.on_epoch_end(epoch)
-
+        print("DEVICE", model.device)
         # setup checkpoint path
         epoch_ckpt_name = f"model_epoch_{epoch}"
 
@@ -287,8 +310,7 @@ def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: s
                 and (epoch % config.experiment.save.every_n_epochs == 0)
             )
             epoch_list_check = epoch in config.experiment.save.epochs
-            last_epoch_check = epoch == config.train.num_epochs
-            should_save_ckpt = time_check or epoch_check or epoch_list_check or last_epoch_check
+            should_save_ckpt = time_check or epoch_check or epoch_list_check
         ckpt_reason = None
         if should_save_ckpt:
             last_ckpt_time = time.time()
@@ -357,31 +379,19 @@ def main(args: argparse.Namespace):
     if args.task is not None:
         # obtain the configuration entry point
         cfg_entry_point_key = f"robomimic_{args.algo}_cfg_entry_point"
-        task_name = args.task.split(":")[-1]
 
-        print(f"Loading configuration for task: {task_name}")
+        print(f"Loading configuration for task: {args.task}")
         print(gym.envs.registry.keys())
         print(" ")
-        cfg_entry_point_file = gym.spec(task_name).kwargs.pop(cfg_entry_point_key)
+        cfg_entry_point_file = gym.spec(args.task).kwargs.pop(cfg_entry_point_key)
         # check if entry point exists
         if cfg_entry_point_file is None:
             raise ValueError(
-                f"Could not find configuration for the environment: '{task_name}'."
+                f"Could not find configuration for the environment: '{args.task}'."
                 f" Please check that the gym registry has the entry point: '{cfg_entry_point_key}'."
             )
 
-        # resolve module path if needed
-        if ":" in cfg_entry_point_file:
-            mod_name, file_name = cfg_entry_point_file.split(":")
-            mod = importlib.import_module(mod_name)
-            if mod.__file__ is None:
-                raise ValueError(f"Could not find module file for: '{mod_name}'")
-            mod_path = os.path.dirname(mod.__file__)
-            config_file = os.path.join(mod_path, file_name)
-        else:
-            config_file = cfg_entry_point_file
-
-        with open(config_file) as f:
+        with open(cfg_entry_point_file) as f:
             ext_cfg = json.load(f)
             config = config_factory(ext_cfg["algo_name"])
         # update config with external json - this will throw errors if
@@ -397,9 +407,6 @@ def main(args: argparse.Namespace):
     if args.name is not None:
         config.experiment.name = args.name
 
-    if args.epochs is not None:
-        config.train.num_epochs = args.epochs
-
     # change location of experiment directory
     config.train.output_dir = os.path.abspath(os.path.join("./logs", args.log_dir, args.task))
 
@@ -407,6 +414,8 @@ def main(args: argparse.Namespace):
 
     if args.normalize_training_actions:
         config.train.data = normalize_hdf5_actions(config, log_dir)
+
+
 
     # get torch device
     device = TorchUtils.get_torch_device(try_to_use_cuda=config.train.cuda)
@@ -416,7 +425,7 @@ def main(args: argparse.Namespace):
     # catch error during training and print it
     res_str = "finished run successfully!"
     try:
-        train(config, device, log_dir, ckpt_dir, video_dir)
+        train(config, device, log_dir, ckpt_dir, video_dir, checkpoint_path=args.checkpoint)
     except Exception as e:
         res_str = f"run failed with error:\n{e}\n\n{traceback.format_exc()}"
     print(res_str)
@@ -445,15 +454,10 @@ if __name__ == "__main__":
     parser.add_argument("--algo", type=str, default=None, help="Name of the algorithm.")
     parser.add_argument("--log_dir", type=str, default="robomimic", help="Path to log directory")
     parser.add_argument("--normalize_training_actions", action="store_true", default=False, help="Normalize actions")
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=None,
-        help=(
-            "Optional: Number of training epochs. If specified, overrides the number of epochs from the JSON training"
-            " config."
-        ),
-    )
+
+    parser.add_argument("--num_epochs", type=int, default=None, help="Number of training epochs")
+
+    parser.add_argument("--checkpoint", default=None, help="Loading checkpoint")
 
     args = parser.parse_args()
 
