@@ -5,10 +5,10 @@ cat <<EOT > job.sh
 #!/bin/bash
 
 #SBATCH -n 1
-#SBATCH --cpus-per-task=40
+#SBATCH --cpus-per-task=16
 #SBATCH --gpus=rtx_4090:1
-#SBATCH --time=24:00:00
-#SBATCH --mem-per-cpu=6000
+#SBATCH --time=6:00:00
+#SBATCH --mem-per-cpu=3000
 #SBATCH --tmp=120g
 #SBATCH --mail-type=END,FAIL,BEGIN
 #SBATCH --mail-user=mschmotzer@ethz.ch

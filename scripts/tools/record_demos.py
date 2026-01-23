@@ -35,6 +35,7 @@ import os
 import time
 import torch
 
+
 # Isaac Lab AppLauncher
 from isaaclab.app import AppLauncher
 
@@ -88,7 +89,7 @@ import omni.log
 import omni.ui as ui
 
 # Additional Isaac Lab imports that can only be imported after the simulator is running
-from isaaclab.devices import OpenXRDevice, Se3Keyboard, Se3SpaceMouse
+from isaaclab.devices import OpenXRDevice, Se3Keyboard, Se3SpaceMouse, Se3SpaceMouseCfg
 
 import isaaclab_mimic.envs  # noqa: F401
 from isaaclab_mimic.ui.instruction_display import InstructionDisplay, show_subtask_instructions
@@ -104,7 +105,7 @@ from isaaclab.managers import DatasetExportMode
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
-
+from isaaclab.managers import TerminationTermCfg as DoneTerm
 
 class RateLimiter:
     """Convenience class for enforcing rates in loops."""
@@ -292,9 +293,9 @@ def main():
         device_name = device_name.lower()
         nonlocal running_recording_instance
         if device_name == "keyboard":
-            return Se3Keyboard(pos_sensitivity=0.2, rot_sensitivity=0.5)
+            return Se3Keyboard(pos_sensitivity=1, rot_sensitivity=0.005)
         elif device_name == "spacemouse":
-            return Se3SpaceMouse(pos_sensitivity=0.2, rot_sensitivity=0.5)
+            return Se3SpaceMouse(cfg=Se3SpaceMouseCfg(pos_sensitivity=0.1, rot_sensitivity=0.00))
         elif "dualhandtracking_abs" in device_name and "GR1T2" in env.cfg.env_name:
             # Create GR1T2 retargeter with desired configuration
             gr1t2_retargeter = GR1T2Retargeter(
@@ -351,9 +352,18 @@ def main():
 
     # reset before starting
     env.sim.reset()
-    env.reset()
+    obs, _ = env.reset()
     teleop_interface.reset()
-
+    #pos = obs['policy']['eef_pos'][0]
+    #quaternion = obs['policy']['eef_quat'][0]
+    #action_start = torch.cat(
+    #        [
+    #            pos.detach().clone(),
+    #            quaternion.detach().clone(),
+    #            torch.ones(1, device=env.device),
+    #        ],
+    #        dim=0,
+    #)  
     # simulate environment -- run everything in inference mode
     current_recorded_demo_count = 0
     success_step_count = 0
@@ -372,59 +382,74 @@ def main():
 
     with contextlib.suppress(KeyboardInterrupt) and torch.inference_mode():
         while simulation_app.is_running():
-            # get data from teleop device
-            teleop_data = teleop_interface.advance()
-
-            # perform action on environment
-            if running_recording_instance:
-                # compute actions based on environment
-                actions = pre_process_actions(teleop_data, env.num_envs, env.device)
-                obv = env.step(actions)
-                if subtasks is not None:
-                    if subtasks == {}:
-                        subtasks = obv[0].get("subtask_terms")
-                    elif subtasks:
-                        show_subtask_instructions(instruction_display, subtasks, obv, env.cfg)
-            else:
-                env.sim.render()
-
-            if success_term is not None:
-                if bool(success_term.func(env, **success_term.params)[0]):
-                    success_step_count += 1
-                    if success_step_count >= args_cli.num_success_steps:
-                        env.recorder_manager.record_pre_reset([0], force_export_or_skip=False)
-                        env.recorder_manager.set_success_to_episodes(
-                            [0], torch.tensor([[True]], dtype=torch.bool, device=env.device)
-                        )
-                        env.recorder_manager.export_episodes([0])
-                        should_reset_recording_instance = True
+            with torch.inference_mode():
+                # get data from teleop device
+                action = teleop_interface.advance().to(env.device)
+                #action_start[:3] += action[:3]*10
+                #action_start[-1] = action[-1]
+                # perform action on environment
+                if running_recording_instance:
+                    # compute actions based on environment
+                    #actions = pre_process_actions(teleop_data, env.num_envs, env.device)
+                    actions = action.repeat(env.num_envs, 1)
+                    print("Action:", actions)
+                    obv = env.step(actions)
+                    if subtasks is not None:
+                        if subtasks == {}:
+                            subtasks = obv[0].get("subtask_terms")
+                        elif subtasks:
+                            show_subtask_instructions(instruction_display, subtasks, obv, env.cfg)
                 else:
+                    env.sim.render()
+
+                if success_term is not None:
+                    if bool(success_term.func(env, **success_term.params)[0]):
+                        success_step_count += 1
+                        if success_step_count >= args_cli.num_success_steps:
+                            env.recorder_manager.record_pre_reset([0], force_export_or_skip=False)
+                            env.recorder_manager.set_success_to_episodes(
+                                [0], torch.tensor([[True]], dtype=torch.bool, device=env.device)
+                            )
+                            env.recorder_manager.export_episodes([0])
+                            should_reset_recording_instance = True
+                    else:
+                        success_step_count = 0
+
+                # print out the current demo count if it has changed
+                if env.recorder_manager.exported_successful_episode_count > current_recorded_demo_count:
+                    current_recorded_demo_count = env.recorder_manager.exported_successful_episode_count
+                    label_text = f"Recorded {current_recorded_demo_count} successful demonstrations."
+                    print(label_text)
+
+                if should_reset_recording_instance:
+                    env.recorder_manager.reset()
+                    obs, _ = env.reset()
+                    teleop_interface.reset()
+
+                    #pos = obs['policy']['eef_pos'][0]
+                    #quaternion = obs['policy']['eef_quat'][0]
+                    #action_start = torch.cat(
+                    #    [
+                    #        pos.detach().clone(),
+                    #        quaternion.detach().clone(),
+                    #        torch.ones(1, device=env.device),
+                    #    ],
+                    #    dim=0,
+                    #) 
+                    should_reset_recording_instance = False
                     success_step_count = 0
+                    instruction_display.show_demo(label_text)
 
-            # print out the current demo count if it has changed
-            if env.recorder_manager.exported_successful_episode_count > current_recorded_demo_count:
-                current_recorded_demo_count = env.recorder_manager.exported_successful_episode_count
-                label_text = f"Recorded {current_recorded_demo_count} successful demonstrations."
-                print(label_text)
+                if args_cli.num_demos > 0 and env.recorder_manager.exported_successful_episode_count >= args_cli.num_demos:
+                    print(f"All {args_cli.num_demos} demonstrations recorded. Exiting the app.")
+                    break
 
-            if should_reset_recording_instance:
-                env.sim.reset()
-                env.recorder_manager.reset()
-                env.reset()
-                should_reset_recording_instance = False
-                success_step_count = 0
-                instruction_display.show_demo(label_text)
+                # check that simulation is stopped or not
+                if env.sim.is_stopped():
+                    break
 
-            if args_cli.num_demos > 0 and env.recorder_manager.exported_successful_episode_count >= args_cli.num_demos:
-                print(f"All {args_cli.num_demos} demonstrations recorded. Exiting the app.")
-                break
-
-            # check that simulation is stopped or not
-            if env.sim.is_stopped():
-                break
-
-            if rate_limiter:
-                rate_limiter.sleep(env)
+                if rate_limiter:
+                    rate_limiter.sleep(env)
 
     env.close()
 

@@ -69,7 +69,7 @@ class Transformer(nn.Module):
             if velocity_input is not None and proprio_input is not None:
                 addition_input = torch.cat([latent_input.unsqueeze(1).repeat(1,self.context_length,1), proprio_input, velocity_input], axis=1).permute(1,0,2)
             else:   
-                addition_input = torch.cat([latent_input, proprio_input], axis=0)
+                addition_input = torch.cat([latent_input.unsqueeze(1).repeat(1,self.context_length,1), proprio_input], axis=1).permute(1,0,2)
             src = torch.cat([addition_input, src.squeeze(2)], axis=0)
         else:
             assert len(src.shape) == 3

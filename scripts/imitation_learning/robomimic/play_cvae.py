@@ -135,11 +135,7 @@ def rollout(
         action_dim,
         device=device,
     )
-    k = 0.01
-    exp_weights = torch.exp(
-        -k * torch.arange(num_queries, device=device)
-    )
-    exp_weights = (exp_weights / exp_weights.sum()).unsqueeze(1)  # [Q,1]
+
 
     # === Rollout loop ===
     buffer_pos =[]
@@ -200,7 +196,6 @@ def rollout(
                 images.unsqueeze(0),
                 qvel=pre_process_qvel(qvel).unsqueeze(0) if velocity_control else None,
             )  # [1, Q, action_dim]
-
             # store future predictions
             all_time_actions[[t], t : t + num_queries] = actions[0]
 
@@ -210,8 +205,33 @@ def rollout(
             valid = torch.any(actions_t != 0, dim=1)
             actions_t = actions_t[valid]
 
-            # exponential weighting (older = stronger)
+            #exponential weighting (older = stronger)
             N = actions_t.shape[0]
+            """beta =  0.25
+            k_cutoff = 0.75
+            if N < 5:
+                raw_action = actions_t.mean(dim=0, keepdim=True)
+
+            else:
+                # Compute dynamic k over full action vector
+                sigma = torch.std(actions_t[:,:3], dim=0)           # [action_dim]
+                k = 1 * torch.max(torch.abs(sigma))        # scalar
+                print(k)
+                # Cutoff → disable temporal ensembling
+                if k > k_cutoff:
+                    raw_action = actions[0, 0:1]  # first action from current chunk
+                else:
+                    idx = torch.arange(N, device=device)
+
+                    # Exponential weights (older = stronger)
+                    weights = torch.exp(-k * idx)
+                    weights = (weights / weights.sum()).unsqueeze(1)
+
+                    raw_action = (actions_t * weights).sum(dim=0, keepdim=True)
+
+            action = post_process(raw_action)
+            action = action.view(1, action_dim)"""
+            k = 0.01
             weights = torch.exp(-k * torch.arange(N, device=device))
             weights = (weights / weights.sum()).unsqueeze(1)
 

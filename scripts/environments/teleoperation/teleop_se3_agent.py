@@ -232,31 +232,54 @@ def main() -> None:
     print(f"Using teleop device: {teleop_interface}")
 
     # reset environment
-    env.reset()
+    obs, _ = env.reset()
     teleop_interface.reset()
 
     print("Teleoperation started. Press 'R' to reset the environment.")
-
-    # simulate environment
+    pos = obs['policy']['eef_pos'][0]
+    quaternion = obs['policy']['eef_quat'][0]
+    action_start = torch.cat(
+        [
+            pos.detach().clone(),
+            quaternion.detach().clone(),
+            torch.ones(1, device=env.device),
+        ],
+        dim=0,
+    )    # simulate environment
     while simulation_app.is_running():
         try:
             # run everything in inference mode
             with torch.inference_mode():
                 # get device command
-                action = teleop_interface.advance()
-
+                action = teleop_interface.advance().to(env.device)
+                print("Device Action:", action)
+                action_start[:6] += action[:6]
+                action_start[-1] = action[-1]
                 # Only apply teleop commands when active
                 if teleoperation_active:
                     # process actions
-                    actions = action.repeat(env.num_envs, 1)
+                    print("Action:", action)
+                    actions = action_start.repeat(env.num_envs, 1)
                     # apply actions
                     env.step(actions)
                 else:
                     env.sim.render()
 
                 if should_reset_recording_instance:
-                    env.reset()
+                    obs, _ = env.reset()
                     teleop_interface.reset()
+
+                    print("Teleoperation started. Press 'R' to reset the environment.")
+                    pos = obs['policy']['eef_pos'][0]
+                    quaternion = obs['policy']['eef_quat'][0]
+                    action_start = torch.cat(
+                        [
+                            pos.detach().clone(),
+                            quaternion.detach().clone(),
+                            torch.ones(1, device=env.device),
+                        ],
+                        dim=0,
+                    ) 
                     should_reset_recording_instance = False
                     print("Environment reset complete")
         except Exception as e:

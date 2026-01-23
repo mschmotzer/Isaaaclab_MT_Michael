@@ -116,6 +116,9 @@ class Se3SpaceMouse(DeviceBase):
                 - gripper command: Last element as a binary value (+1.0 for open, -1.0 for close).
         """
         rot_vec = Rotation.from_euler("XYZ", self._delta_rot).as_rotvec()
+        #convert to quaternion
+        #quaternion = Rotation.from_rotvec(rot_vec).as_quat()
+
         command = np.concatenate([self._delta_pos, rot_vec])
         if self.gripper_term:
             gripper_value = -1.0 if self._close_gripper else 1.0
@@ -133,10 +136,13 @@ class Se3SpaceMouse(DeviceBase):
         # implement a timeout for device search
         for _ in range(5):
             for device in hid.enumerate():
+                print("+++++++++++++++++++++++++++++++++++++",device["product_string"])
                 if (
+                    
                     device["product_string"] == "SpaceMouse Compact"
                     or device["product_string"] == "SpaceMouse Wireless"
                     or device["product_string"] == "3Dconnexion Universal Receiver"
+                    or device["product_string"] == "SpaceNavigator"
                 ):
                     # set found flag
                     found = True

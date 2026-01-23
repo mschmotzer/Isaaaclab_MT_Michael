@@ -59,6 +59,63 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=[0, 0, -0.68]), # type: ignore
         spawn=GroundPlaneCfg(), # type: ignore
     )
+    # Camera attached to robot link
+    camera: TiledCameraCfg =  TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/panda_hand/zed_mini_cam1",
+        update_period=0.0025,
+        height=1*240,
+        width=1*320,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=3.06,
+            focus_distance=50.0,
+            horizontal_aperture=4.8,
+            vertical_aperture=3.6,
+            clipping_range=(0.01, 1.0),
+        ),
+        offset=TiledCameraCfg.OffsetCfg(
+                        pos=(-0.10, 0.0, 0.1034-0.08),rot=[0.653, 0.271, 0.271, 0.653]
+        ),
+    )
+    camera2: TiledCameraCfg =  TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/panda_link0/zed_mini_cam2",
+        update_period=0.0025,
+        height=1*240,
+        width=1*320,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=2.1,             # 4 mm lens
+            focus_distance=10.0,          # meters, adjust based on scene
+            horizontal_aperture=4.8,      # sensor width in mm
+            vertical_aperture=3.6,        # sensor height in mm
+            clipping_range=(0.01, 1.5)  # near/far plane
+        ),
+        offset=TiledCameraCfg.OffsetCfg(
+                        pos=[0.7, -0.4, 0.40],  # adjust height as neededpos=[1.0, 0.0, 0.25],#
+                      rot=[0.462, -0.800, -0.331, 0.191] # rot= [0.5, -0.5, -0.5, 0.5]#
+
+        ),
+    )
+
+    camera3: TiledCameraCfg =  TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/panda_link0/zed_mini_cam3",
+        update_period=0.0025,
+        height=1*240,
+        width=1*320,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=2.1,             # 4 mm lens
+            focus_distance=10.0,          # meters, adjust based on scene
+            horizontal_aperture=4.8,      # sensor width in mm
+            vertical_aperture=3.6,        # sensor height in mm
+            clipping_range=(0.01, 1.5)  # near/far plane
+        ),
+        offset=TiledCameraCfg.OffsetCfg(
+                        pos=[0.5, -0.75, 0.25],#[1.0, -0.5, 0.60],  # adjust height as needed
+                        rot=[0.7071, -0.7071, 0.0, 0.0]#0.524, -0.679, -0.500, 0.277]
+
+        ),
+    )
 
     # lights
     light = AssetBaseCfg(
@@ -97,8 +154,8 @@ class ObjectTableSceneCfgRGB(InteractiveSceneCfg):
     camera: TiledCameraCfg =  TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_hand/zed_mini_cam1",
         update_period=0.0025,
-        height=240,
-        width=320,
+        height=1*240,
+        width=1*320,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=3.06,
@@ -108,14 +165,14 @@ class ObjectTableSceneCfgRGB(InteractiveSceneCfg):
             clipping_range=(0.01, 1.0),
         ),
         offset=TiledCameraCfg.OffsetCfg(
-                        pos=(0.04, 0.0, 0.1034-0.07),rot=[0.6964, -0.1227, -0.1227, 0.6964]
+                        pos=(-0.10, 0.0, 0.1034-0.08),rot=[0.653, 0.271, 0.271, 0.653]
         ),
     )
     camera2: TiledCameraCfg =  TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0/zed_mini_cam2",
         update_period=0.0025,
-        height=240,
-        width=320,
+        height=1*240,
+        width=1*320,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=2.1,             # 4 mm lens
@@ -125,8 +182,8 @@ class ObjectTableSceneCfgRGB(InteractiveSceneCfg):
             clipping_range=(0.01, 1.5)  # near/far plane
         ),
         offset=TiledCameraCfg.OffsetCfg(
-                        pos=[1.0, 0.0, 0.25],#[1.0, -0.5, 0.60],  # adjust height as needed
-                        rot= [0.5, -0.5, -0.5, 0.5]#0.524, -0.679, -0.500, 0.277]
+                        pos=[0.7, -0.4, 0.40],  # adjust height as neededpos=[1.0, 0.0, 0.25],#
+                      rot=[0.462, -0.800, -0.331, 0.191] # rot= [0.5, -0.5, -0.5, 0.5]#
 
         ),
     )
@@ -134,8 +191,8 @@ class ObjectTableSceneCfgRGB(InteractiveSceneCfg):
     camera3: TiledCameraCfg =  TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0/zed_mini_cam3",
         update_period=0.0025,
-        height=240,
-        width=320,
+        height=1*240,
+        width=1*320,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=2.1,             # 4 mm lens
@@ -255,19 +312,25 @@ class ObservationsCfgRGB:
         # Implement observation noise -> Simulate state estimation errors
         #object = ObsTerm(func=mdp.object_obs_with_noise,
         #               params={"position_noise_std": 0.0075 , "orientation_noise_std": 0.01})
-        eef_pos = ObsTerm(func=mdp.ee_frame_pos_with_noise,
-                        params={"noise_std": 0.005})
-        eef_quat = ObsTerm(func=mdp.ee_frame_quat_with_noise,
-                        params={"noise_std": 0.001})
-        gripper_pos = ObsTerm(func=mdp.gripper_pos_with_noise,
-                        params={"noise_std": 0.0005})
-
-        # Keep other observations as they are
+        #eef_pos = ObsTerm(func=mdp.ee_frame_pos_with_noise,
+        #                params={"noise_std": 0.000})
+        #eef_quat = ObsTerm(func=mdp.ee_frame_quat_with_noise,
+        #                params={"noise_std": 0.000})
+        #gripper_pos = ObsTerm(func=mdp.gripper_pos_with_noise,
+        #                params={"noise_std": 0.0000})
+        
+        
         actions = ObsTerm(func=mdp.last_action)
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
-        #joint_vel = ObsTerm(func=mdp.joint_vel_rel)
-        #cube_positions = ObsTerm(func=mdp.cube_positions_in_world_frame)
-        #cube_orientations = ObsTerm(func=mdp.cube_orientations_in_world_frame)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        object = ObsTerm(func=mdp.object_obs)
+        cube_positions = ObsTerm(func=mdp.cube_positions_in_world_frame)
+        cube_orientations = ObsTerm(func=mdp.cube_orientations_in_world_frame)
+        eef_pos = ObsTerm(func=mdp.ee_frame_pos)
+        eef_quat = ObsTerm(func=mdp.ee_frame_quat)
+        gripper_pos = ObsTerm(func=mdp.gripper_pos)
+        
+
         image = ObsTerm(
             func=mdp.image,
           params={"sensor_cfg": SceneEntityCfg("camera"), "normalize": False},
@@ -342,6 +405,14 @@ class ObservationsCfgRGB:
                 "robot_cfg": SceneEntityCfg("robot"),
                 "ee_frame_cfg": SceneEntityCfg("ee_frame"),
                 "object_cfg": SceneEntityCfg("cube_3"),
+            },
+        )
+        stack_2 = ObsTerm(
+            func=mdp.object_stacked,
+            params={
+                "robot_cfg": SceneEntityCfg("robot"),
+                "upper_object_cfg": SceneEntityCfg("cube_3"),
+                "lower_object_cfg": SceneEntityCfg("cube_2"),
             },
         )
 

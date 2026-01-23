@@ -28,7 +28,7 @@ from isaaclab.envs.mdp import events as mdp1
 ##
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 # Import the real robot configuration
-from isaaclab_assets.robots.franka import FRANKA_PANDA_REAL_ROBOT_CFG
+from isaaclab_assets.robots.franka import FRANKA_PANDA_REAL_ROBOT_CFG, FRANKA_PANDA_CFG, FRANKA_PANDA_HIGH_PD_CFG
 from isaaclab_assets.robots.fr3 import FR3_WITH_HAND_CFG
 
 """Inherits from the StackEnvCfg "base env for stacking task" and specializes the config for joint position control."""
@@ -61,7 +61,7 @@ class EventCfg:
         func=franka_stack_events.randomize_object_pose,
         mode="reset",
         params={
-            "pose_range": {"x": (0.3, 0.6), "y": (-0.3, 0.3), "z": (0.0203, 0.0203), "yaw": (3.1415, 3.1415, 0)},
+            "pose_range": {"x": (0.4, 0.6), "y": (-0.1, 0.1), "z": (0.0203, 0.0203), "yaw": (3.1415, 3.1415, 0)},
             "min_separation": 0.1,
             "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
@@ -133,7 +133,7 @@ class FrankaCubeStackEnvCfg(StackEnvCfg):
                     setattr(self.events, f"domain_rand_{attr_name}", getattr(self.domain_randomization, attr_name))
 
         # Fill in the missing components of the base config: Set real franka configuration as robot
-        self.scene.robot = FRANKA_PANDA_REAL_ROBOT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.robot.spawn.semantic_tags = [("class", "robot")]  # type: ignore
         
         # Add semantics to table
@@ -207,7 +207,7 @@ class FrankaCubeStackEnvCfg(StackEnvCfg):
         # Defines end-effector frame transformer
         self.scene.ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
-            debug_vis=True,
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
@@ -309,7 +309,7 @@ class FrankaCubeStackEnvCfgRGB(StackEnvCfgRGB):
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.4, 0.0, 0.0203], rot=[1, 0, 0, 0]),    # type: ignore
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd",
-                scale=(1.0, 1.0, 1.0),
+                scale=(1,1,1),
                 rigid_props=cube_properties,
                 semantic_tags=[("class", "cube_1")],
                 visual_material=sim_utils.PreviewSurfaceCfg(

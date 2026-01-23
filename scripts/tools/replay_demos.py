@@ -62,7 +62,7 @@ import gymnasium as gym
 import os
 import torch
 
-from isaaclab.devices import Se3Keyboard
+from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg 
 from isaaclab.utils.datasets import EpisodeData, HDF5DatasetFileHandler
 
 if args_cli.enable_pinocchio:
@@ -151,7 +151,7 @@ def main():
     # create environment from loaded config
     env = gym.make(env_name, cfg=env_cfg).unwrapped
 
-    teleop_interface = Se3Keyboard(pos_sensitivity=0.1, rot_sensitivity=0.1)
+    teleop_interface = Se3Keyboard(Se3KeyboardCfg())
     teleop_interface.add_callback("N", play_cb)
     teleop_interface.add_callback("B", pause_cb)
     print('Press "B" to pause and "N" to resume the replayed actions.')
@@ -274,8 +274,8 @@ def main():
                             # Split into arm and gripper for comparison
                             arm_action = applied_action[:7]  # First 7 elements are arm joints
                             arm_positions = joint_pos[:7]   # First 7 elements are arm joints
-                            cube_pos = obs["policy"]["cube_positions"]
-                            print(f"📦 Cube Position: {cube_pos}")
+                            #cube_pos = obs["policy"]["cube_positions"]
+                            #print(f"📦 Cube Position: {cube_pos}")
                             ee_pos = obs["policy"]["eef_pos"]
                             print(f"✋ End-Effector Position: {ee_pos}")
                             # Show arm joint errors
