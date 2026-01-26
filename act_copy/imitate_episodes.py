@@ -47,12 +47,12 @@ def main(args):
     camera_names = task_config['camera_names']
 
     # fixed parameters
-    state_dim = 9
+    state_dim = 8
     lr_backbone = 1e-5
     backbone = 'resnet18'
     if policy_class == 'ACT':
         enc_layers = 4
-        dec_layers = 7
+        dec_layers = 6
         nheads = 8
         policy_config = {'lr': args['lr'],
                          'num_queries': args['chunk_size'],
@@ -69,6 +69,7 @@ def main(args):
                          "image_aug": args['image_aug'],
                          'context_length': args['context_length'],       
                          'pretrained': args['pretrained'],
+                            'dropout': args['dropout'],
 
                          }
     elif policy_class == 'CNNMLP':
@@ -334,7 +335,8 @@ def image_augmentation(image):
     Input shape: [batch, num_cameras, channels, height, width]
     e.g., torch.Size([8, 2, 3, 240, 320])
     """
-    batch_size, num_cameras, channels, height, width = image.shape
+    print("Applying image augmentation...", image.shape)
+    batch_size, num_cameras,chunk,channels, height, width = image.shape
     
     # Define augmentations
     color_jitter = transforms.ColorJitter(
@@ -514,6 +516,7 @@ if __name__ == '__main__':
     parser.add_argument('--image_aug', action='store_true')
     parser.add_argument('--context_length', action='store', type=int, help='context_length', required=False, default=1)
     parser.add_argument("--pretrained", type=str, help="Path to pretrained model", default=None)
+    parser.add_argument('--dropout', action='store', type=float, help='dropout rate', required=False, default=0.1)
 
     
     main(vars(parser.parse_args()))

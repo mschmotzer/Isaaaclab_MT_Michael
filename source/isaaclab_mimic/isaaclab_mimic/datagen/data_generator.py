@@ -494,7 +494,6 @@ class DataGenerator:
             src_subtask_gripper_actions = src_subtask_gripper_actions.clone()
 
         # Transform source demonstration segment using relevant object pose.
-        print("use_delta_transform:", use_delta_transform )
         if use_delta_transform is not None:
             # Use delta transform from concurrent task
             transformed_eef_poses = transform_source_data_segment_using_delta_object_pose(
@@ -662,7 +661,6 @@ class DataGenerator:
         # create runtime subtask constraint rules from subtask constraint configs
         runtime_subtask_constraints_dict = {}
         for subtask_constraint in self.env_cfg.task_constraint_configs:
-            print("Generating runtime constraints for:", subtask_constraint)
             runtime_subtask_constraints_dict.update(subtask_constraint.generate_runtime_subtask_constraints())
 
         # save generated data in these variables

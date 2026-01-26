@@ -56,20 +56,23 @@ class DETRVAE(nn.Module):
         self.time_embed = nn.Embedding(context_length, hidden_dim)
         if backbones is not None:
             
-            self.input_proj = nn.Conv2d(backbones[0].num_channels, hidden_dim, kernel_size=1)
+            self.input_projections = nn.ModuleList()
+            for cam_id, cam_name in enumerate(self.camera_names):
+                proj = nn.Conv2d(backbones[cam_id].num_channels, hidden_dim, kernel_size=1)
+                self.input_projections.append(proj)
             self.backbones = nn.ModuleList(backbones)
             self.input_proj_robot_state = nn.Linear(8, hidden_dim)
             if velocity_control:
                 self.input_proj_robot_state_vel = nn.Linear(8, hidden_dim)  # project concatenated [qpos, qvel]
         else:
-            # input_dim = 8 + 7 # robot_state + env_state
+            # input_dim = 7 + 7 # robot_state + env_state
             self.input_proj_robot_state = nn.Linear(8, hidden_dim)
-            self.input_proj_env_state = nn.Linear(7, hidden_dim)
+            self.input_proj_env_state = nn.Linear(8, hidden_dim)
             self.pos = torch.nn.Embedding(2, hidden_dim)
             self.backbones = None
         
         # encoder extra parameters
-        self.latent_dim = 32 # final size of latent z # TODO tune
+        self.latent_dim = 4 # final size of latent z # TODO tune
         self.cls_embed = nn.Embedding(1, hidden_dim) # extra cls token embedding
         self.encoder_action_proj = nn.Linear(8, hidden_dim) # project action to embedding
         self.encoder_joint_proj = nn.Linear(8, hidden_dim)  # project qpos to embedding
@@ -135,7 +138,6 @@ class DETRVAE(nn.Module):
             latent_sample = reparametrize(mu, logvar)
             latent_input = self.latent_out_proj(latent_sample)
         else:
-            
             mu = logvar = None
             latent_sample = torch.zeros([bs, self.latent_dim], dtype=torch.float32).to(qpos.device)
             latent_input = self.latent_out_proj(latent_sample)
@@ -147,11 +149,11 @@ class DETRVAE(nn.Module):
             all_cam_pos = []
             for cam_id, cam_name in enumerate(self.camera_names):
                 for i in range(self.context_length):
-                    features, pos = self.backbones[0](image[:, cam_id,i]) # HARDCODED
+                    features, pos = self.backbones[cam_id](image[:, cam_id,i]) # HARDCODED
                     features = features[0] # take the last layer feature
                     pos = pos[0]
                     pos += self.temporal_embed.weight[i].unsqueeze(1).unsqueeze(2) # add temporal embedding
-                    all_cam_features.append(self.input_proj(features).unsqueeze(1)) 
+                    all_cam_features.append(self.input_projections[cam_id](features).unsqueeze(1)) 
                     all_cam_pos.append(pos.unsqueeze(1))
             # proprioception features
             if qvel is not None:
@@ -169,7 +171,7 @@ class DETRVAE(nn.Module):
         else:
             qpos = self.input_proj_robot_state(qpos)
             env_state = self.input_proj_env_state(env_state)
-            transformer_input = torch.cat([qpos, env_state], axis=1) # seq length = 2
+            transformer_input = torch.cat([qpos, env_state], axis=1) 
             hs = self.transformer(transformer_input, None, self.query_embed.weight, self.pos.weight)[0]
         a_hat = self.action_head(hs)
         is_pad_hat = self.is_pad_head(hs)
@@ -270,8 +272,9 @@ def build(args):
     # backbone = None # from state for now, no need for conv nets
     # From image
     backbones = []
-    backbone = build_backbone(args)
-    backbones.append(backbone)
+    for _ in args.camera_names:
+        backbone = build_backbone(args)
+        backbones.append(backbone)
 
     transformer = build_transformer(args)
 

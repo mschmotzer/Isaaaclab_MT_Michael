@@ -32,7 +32,7 @@ def get_default_args():
     args.enc_layers = 4
     args.dec_layers = 6
     args.dim_feedforward = 3200
-    args.hidden_dim = 512
+    args.hidden_dim = 64
     args.dropout = 0.1
     args.nheads = 8
     args.num_queries = 400

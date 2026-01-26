@@ -33,7 +33,8 @@ import numpy as np
 import os
 import sys
 from pathlib import Path
-import pandas as pd  # Add pandas import for CSV handling
+import pandas as pd
+from traitlets import default  # Add pandas import for CSV handling
 from isaaclab.app import AppLauncher
 
 # Ensure repo root is on PYTHONPATH so top-level modules (e.g., `act_copy`) are importable
@@ -63,6 +64,8 @@ parser.add_argument("--obs_output_file", type=str, default="successful_observati
 parser.add_argument("--csv_output_file", type=str, default="successful_observations.csv", help="Output CSV file path for detailed observations.")
 parser.add_argument('--velocity_control', action='store_true')
 parser.add_argument('--context_length', type=int, default=1, help='context_length')
+parser.add_argument("--custom_cube_poses", type=str, default=None, required=False, 
+                   help="JSON file path with custom cube configurations")
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -162,11 +165,11 @@ def rollout(
             if img.dim() == 4:
                 img = img.squeeze(0)  # remove env dim
             return img.permute(2, 0, 1)
-        img1_new = process_image(policy_obs["image2"], device)
-        img2_new = process_image(policy_obs["image3"], device)
+        img1_new = process_image(policy_obs["image"], device)
+        #img2_new = process_image(policy_obs["image2"], device)
 
-        images_new = torch.stack([img1_new, img2_new], dim=0)      # [2, C, H, W]
-        images_new = images_new.unsqueeze(0).float() / 255.0   # [1, 2, C, H, W]
+        #images_new = torch.stack([img1_new, img2_new], dim=0)      # [2, C, H, W]
+        images_new = img1_new.unsqueeze(0).float() / 255.0   # [1, C, H, W]
 
 
         buffer_pos.append(qpos_new)
@@ -190,14 +193,15 @@ def rollout(
         # 2. ACT Inference (NO graph, NO leaks)
         # ------------------------------------------------------------------
 
-        with torch.no_grad():
+        with torch.inference_mode():
+            policy.eval()
             actions = policy(
                 pre_process_qpos(qpos).unsqueeze(0),
                 images.unsqueeze(0),
                 qvel=pre_process_qvel(qvel).unsqueeze(0) if velocity_control else None,
             )  # [1, Q, action_dim]
             # store future predictions
-            all_time_actions[[t], t : t + num_queries] = actions[0]
+            all_time_actions[[t], t : t + actions.shape[1]] = actions[0, :, :]
 
             # gather predictions for current timestep
             actions_t = all_time_actions[:, t]  # [T, action_dim]
@@ -231,10 +235,9 @@ def rollout(
 
             action = post_process(raw_action)
             action = action.view(1, action_dim)"""
-            k = 0.01
+            k = 0.1
             weights = torch.exp(-k * torch.arange(N, device=device))
             weights = (weights / weights.sum()).unsqueeze(1)
-
             raw_action = (actions_t * weights).sum(dim=0, keepdim=True)
             action = post_process(raw_action)
 
@@ -275,6 +278,82 @@ def rollout(
     print(f"⏱ Trial {trial_id} reached horizon")
     return False, observation_log
 
+def update_environment_events(env, cube_poses):
+    """Update the environment's event configuration with new cube poses.
+    
+    Args:
+        env: The Isaac Lab environment
+        cube_poses: List of cube poses to set
+    """
+    from isaaclab.managers import EventTermCfg as EventTerm
+    from isaaclab.managers import SceneEntityCfg
+    from isaaclab_tasks.manager_based.manipulation.stack.mdp import franka_stack_events
+    
+    # Update the environment's event configuration
+    if not hasattr(env.cfg, 'events'):
+        from isaaclab_tasks.manager_based.manipulation.stack.config.franka.stack_joint_pos_env_cfg import EventCfg
+        env.cfg.events = EventCfg()
+    
+    # Remove any existing custom pose event
+    if hasattr(env.cfg.events, 'set_custom_cube_poses'):
+        delattr(env.cfg.events, 'set_custom_cube_poses')
+    
+    # Add new custom cube positioning event
+    env.cfg.events.set_custom_cube_poses = EventTerm(
+        func=franka_stack_events.set_fixed_object_poses,
+        mode="reset",
+        params={
+            "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
+            "fixed_poses": cube_poses,
+        },
+    )
+    
+    # Re-initialize the event manager with the new configuration
+    from isaaclab.managers import EventManager
+    env.event_manager = EventManager(env.cfg.events, env)
+    
+    print(f"[INFO] Updated environment events with new cube poses")
+
+def load_custom_cube_configurations(file_path):
+    """Load custom cube configurations from JSON file.
+    
+    Args:
+        file_path: Path to JSON file containing cube configurations
+        
+    Returns:
+        List of cube configurations, each containing poses for 3 cubes
+    """
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        
+        # Support both new multi-configuration format and legacy single configuration
+        if isinstance(data, dict) and "configurations" in data:
+            # New format: {"configurations": [{"name": ..., "poses": [...]}, ...]}
+            configurations = data["configurations"]
+            print(f"[INFO] Loaded {len(configurations)} cube configurations:")
+            for i, config in enumerate(configurations):
+                print(f"  {i}: {config['name']} - {config.get('description', 'No description')}")
+            return configurations
+        elif isinstance(data, list):
+            # Legacy format: [{"pos": ..., "quat": ...}, ...]
+            print(f"[INFO] Converting legacy format to new configuration format")
+            legacy_config = {
+                "name": "legacy_config",
+                "description": "Converted from legacy format",
+                "poses": data
+            }
+            return [legacy_config]
+        else:
+            print(f"[ERROR] Invalid JSON format in {file_path}")
+            return None
+            
+    except FileNotFoundError:
+        print(f"[ERROR] Configuration file not found: {file_path}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Invalid JSON in {file_path}: {e}")
+        return None
 
 
 def main():
@@ -330,7 +409,6 @@ def main():
     from act_copy.policy_runner import ACTPolicy
     policy = ACTPolicy(policy_config)
     loading_status = policy.load_state_dict(torch.load(args_cli.checkpoint))
-    print(loading_status)
     policy.cuda()
     policy.eval()
     # Read sequence_length from the policy configuration
@@ -353,9 +431,37 @@ def main():
     }
     
     # Run multiple independent rollouts for statistical evaluation
+    best_start = 0
+    best_end = 0
+    best_success = 0
+    #for  end in range(64):
+    #    for start in range(10):
+    cube_configurations = []
+    if args_cli.custom_cube_poses is not None:
+        cube_configurations = load_custom_cube_configurations(args_cli.custom_cube_poses)
+        current_config_index = 0
     for trial in range(args_cli.num_rollouts):
         print(f"[INFO] Starting trial {trial}")
-        # Single episode rollout
+
+        if args_cli.custom_cube_poses is not None:
+            current_config = cube_configurations[current_config_index]
+            current_poses = current_config["poses"]
+            
+            print(f"\n[INFO] Trial {trial}/{args_cli.num_rollouts}")
+            print(f"[INFO] Using configuration: {current_config['name']}")
+            print(f"[INFO] Description: {current_config.get('description', 'N/A')}")
+            
+            # Print cube positions for verification
+            print(f"[INFO] Expected cube positions:")
+            for i, pose in enumerate(current_poses):
+                pos = pose["pos"]
+                print(f"  Cube {i+1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
+            
+            # For trials after the first, update the environment's event configuration
+            if trial > 0:
+                print(f"[INFO] Updating environment events for configuration: {current_config['name']}")
+                update_environment_events(env, current_poses)
+            current_config_index = (current_config_index + 1) % len(cube_configurations)
         success, obs_log = rollout(
                 policy,
                 env,
@@ -366,7 +472,7 @@ def main():
                 save_observations=args_cli.save_observations,
                 trial_id=trial,
                 velocity_control=args_cli.velocity_control,
-                context_length=args_cli.context_length,
+                context_length=args_cli.context_length,    
         )       
         results.append(success)
         
@@ -394,9 +500,14 @@ def main():
         
         print(f"[INFO] Trial {trial}: {success}\n")
 
-    print(f"\nSuccessful trials: {results.count(True)}, out of {len(results)} trials")
-    print(f"Success rate: {results.count(True) / len(results)}")
-    print(f"Trial Results: {results}\n")
+        print(f"\nSuccessful trials: {results.count(True)}, out of {len(results)} trials")
+        print(f"Success rate: {results.count(True) / len(results)}")
+        print(f"Trial Results: {results}\n")
+        """if results.count(True) > best_success:
+            best_success = results.count(True)
+            best_start = start
+            best_end = end"""
+    print(f"Best start: {best_start}, Best end: {best_end}, with success: {best_success} out of {len(results)}")
 
     # Save all successful observations (if enabled and collected)
     if args_cli.save_observations and all_successful_observations:

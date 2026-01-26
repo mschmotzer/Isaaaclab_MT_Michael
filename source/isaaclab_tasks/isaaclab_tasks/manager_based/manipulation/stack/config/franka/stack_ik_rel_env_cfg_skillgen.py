@@ -49,10 +49,10 @@ class ObservationsCfg:
             func=mdp.image,
             params={"sensor_cfg": SceneEntityCfg("camera2"), "normalize": False},
         )
-        image3 = ObsTerm(
+        """image3 = ObsTerm(
             func=mdp.image,
             params={"sensor_cfg": SceneEntityCfg("camera3"), "normalize": False},
-        )
+        )"""
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = False
