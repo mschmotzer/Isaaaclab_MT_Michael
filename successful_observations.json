@@ -1,0 +1,18 @@
+[
+  {
+    "trial": 0,
+    "metadata": {
+      "task": "Isaac-Stack-Cube-Franka-IK-Abs-Transformer-RGB-v0",
+      "checkpoint": "/home/pdz/MasterThesis_MSC/Results_EUler/Two_backbones_w_encoder/policy_best.ckpt",
+      "horizon": 10,
+      "frequency_hz": 20,
+      "dt": 0.05,
+      "total_steps": 10,
+      "norm_factor_min": null,
+      "norm_factor_max": null
+    },
+    "observations": [
+      {
+        "step": 0,
+        "obs": {
+          "actions": 

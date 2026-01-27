@@ -106,6 +106,7 @@ def rollout(
     trial_id=0,
     velocity_control=False,
     context_length=1,
+    trial =0
 ):
     """
     Memory-safe rollout for ACT policy in Isaac Lab
@@ -144,6 +145,8 @@ def rollout(
     buffer_pos =[]
     buffer_vel =[]
     buffer_images = []
+    import time
+    time_1 =time.time()
     for t in range(horizon):
 
         # ------------------------------------------------------------------
@@ -163,15 +166,20 @@ def rollout(
         # Images: convert once, no storing
         def process_image(img: torch.Tensor, device):
             if img.dim() == 4:
-                img = img.squeeze(0)  # remove env dim
-            return img.permute(2, 0, 1)
+                img = img.squeeze(0)  # remove batch/env dim
+            # Ensure shape [C, H, W]
+            img = img.permute(2, 0, 1)
+            return img.to(device)
+
+        from torchvision.utils import save_image
+        
         img1_new = process_image(policy_obs["image"], device)
-        #img2_new = process_image(policy_obs["image2"], device)
+        #save_image(img1_new, f'image_1_{trial}_{-(time_1 - time.time())}.png')
+        img2_new = process_image(policy_obs["image2"], device)
+        #save_image(img2_new, f'image_2_{trial}_{-(time_1 - time.time())}.png')
 
-        #images_new = torch.stack([img1_new, img2_new], dim=0)      # [2, C, H, W]
-        images_new = img1_new.unsqueeze(0).float() / 255.0   # [1, C, H, W]
-
-
+        images_new = torch.stack([img1_new, img2_new], dim=0)      # [2, C, H, W]
+        images_new = (images_new.float() / 255.0).unsqueeze(0)   # [1, C, H, W]
         buffer_pos.append(qpos_new)
         buffer_vel.append(qvel_new)
         buffer_images.append(images_new)
@@ -186,7 +194,8 @@ def rollout(
                 buffer_images.append(images_new)    
         qpos = torch.stack(buffer_pos, dim=0)
         qvel = torch.stack(buffer_vel, dim=0) if velocity_control else None
-        images = torch.cat(buffer_images, dim=0).permute(1,0,2,3,4)  # [1, 2, C, H, W] -> [1, C, 2, H, W]
+        images = torch.cat(buffer_images, dim=0)
+        images = images.permute(1,0,2,3,4)  # [1, 2, C, H, W] -> [1, C, 2, H, W]
 
 
         # ------------------------------------------------------------------
@@ -252,10 +261,19 @@ def rollout(
         # 4. Optional logging (CPU ONLY)
         # ------------------------------------------------------------------
         if save_observations:
+            def to_numpy(obj):
+                if torch.is_tensor(obj):
+                    return obj.detach().cpu().numpy()
+                if isinstance(obj, dict):
+                    return {k: to_numpy(v) for k, v in obj.items()}
+                if isinstance(obj, (list, tuple)):
+                    return type(obj)(to_numpy(v) for v in obj)
+                return obj
+
             observation_log.append({
                 "step": t,
-                "obs": obs.detach().cpu().numpy(),
-                "action": action.detach().cpu().numpy(),
+                "obs": to_numpy(policy_obs),
+                "action": to_numpy(action),
             })
 
         # ------------------------------------------------------------------
@@ -393,7 +411,7 @@ def main():
     backbone = 'resnet18'
 
     enc_layers = 4
-    dec_layers = 7
+    dec_layers = 6
     nheads = 8
     policy_config = {   'ckpt_dir': args_cli.checkpoint,
                         'num_queries': 64,
@@ -472,13 +490,14 @@ def main():
                 save_observations=args_cli.save_observations,
                 trial_id=trial,
                 velocity_control=args_cli.velocity_control,
-                context_length=args_cli.context_length,    
+                context_length=args_cli.context_length,
+                trial =trial    
         )       
         results.append(success)
         
         # Collect successful observations if --save_observations is enabled
         # Only save data from successful trials
-        if success and args_cli.save_observations and obs_log is not None:
+        if args_cli.save_observations and obs_log is not None:
             all_successful_observations.append({
                 "trial": trial,
                 "observations": obs_log,

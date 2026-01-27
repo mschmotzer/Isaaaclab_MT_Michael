@@ -138,6 +138,7 @@ class DETRVAE(nn.Module):
             latent_sample = reparametrize(mu, logvar)
             latent_input = self.latent_out_proj(latent_sample)
         else:
+        
             mu = logvar = None
             latent_sample = torch.zeros([bs, self.latent_dim], dtype=torch.float32).to(qpos.device)
             latent_input = self.latent_out_proj(latent_sample)
@@ -149,6 +150,9 @@ class DETRVAE(nn.Module):
             all_cam_pos = []
             for cam_id, cam_name in enumerate(self.camera_names):
                 for i in range(self.context_length):
+                    #print("Processing camera:", cam_name, "time step:", i   )
+                    #print("Image shape:", image.shape)
+                    #print( image[:, cam_id,i].shape)
                     features, pos = self.backbones[cam_id](image[:, cam_id,i]) # HARDCODED
                     features = features[0] # take the last layer feature
                     pos = pos[0]

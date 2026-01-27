@@ -2,7 +2,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import torchvision.transforms as transforms
 
-from act_copy.detr.main import build_ACT_model_and_optimizer, build_CNNMLP_model_and_optimizer
+#from act_copy.detr.main import build_ACT_model_and_optimizer, build_CNNMLP_model_and_optimizer
 from detr.main import build_ACT_model_and_optimizer, build_CNNMLP_model_and_optimizer
 import torch
 import IPython
