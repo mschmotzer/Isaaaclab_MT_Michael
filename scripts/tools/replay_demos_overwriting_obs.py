@@ -56,7 +56,7 @@ import gymnasium as gym
 import os
 import torch
 
-from isaaclab.devices import Se3Keyboard
+#from isaaclab.devices import Se3Keyboard
 from isaaclab.utils.datasets import EpisodeData, HDF5DatasetFileHandler
 
 if args_cli.enable_pinocchio:
@@ -105,7 +105,7 @@ def main():
     if not os.path.exists(src_file):
         raise FileNotFoundError(src_file)
 
-    dst_file = src_file.replace(".hdf5", "_new_obs.hdf5")
+    dst_file = src_file.replace(".hdf5", "_new_obs1.hdf5")
     shutil.copy(src_file, dst_file)
     h5_out = h5py.File(dst_file, "r+")  # We will overwrite /data/<episode>/obs/*
     print(f"\n📁 Created output file: {dst_file}\n")
@@ -132,9 +132,9 @@ def main():
 
     env = gym.make(env_name, cfg=env_cfg).unwrapped
 
-    teleop = Se3Keyboard(pos_sensitivity=0.1, rot_sensitivity=0.1)
-    teleop.add_callback("N", play_cb)
-    teleop.add_callback("B", pause_cb)
+    #teleop = Se3Keyboard(pos_sensitivity=0.1, rot_sensitivity=0.1)
+    #teleop.add_callback("N", play_cb)
+    #teleop.add_callback("B", pause_cb)
 
     validate_state = args_cli.validate_states and args_cli.num_envs == 1
 
@@ -143,7 +143,7 @@ def main():
         idle_action = idle_action.repeat(args_cli.num_envs, 1)
 
     env.reset()
-    teleop.reset()
+    #teleop.reset()
 
     episode_names = list(dataset_file_handler.get_episode_names())
     replayed_episode_count = 0
@@ -210,18 +210,17 @@ def main():
                     ep_name = episode_names[next_ep_idx]
 
                     obs_group = h5_out["data"][ep_name]["obs"]
-
+                    eps_len =  h5_out["data"][ep_name]['actions'].shape[0]
                     # Write each key from obs["policy"]
                     for key, value in obs["policy"].items():
                         data_np = value.cpu().numpy()
-                        print(f"Writing obs key '{key}' at step {step_idx} data: {value}.")
                         # Create dataset only once
-                        if key not in obs_group:
-                            ep_len = episode_data.total_steps
-                            obs_dim = data_np.shape[-1]
+                        if key not in obs_group: # or data_np.shape[1] != obs_group[key].shape[1]:
+                            ep_len = eps_len
+                            obs_dim = data_np.shape[1:]
                             obs_group.create_dataset(
                                 key,
-                                shape=(ep_len, obs_dim),
+                                shape=(ep_len, *obs_dim),
                                 dtype=data_np.dtype,
                             )
 

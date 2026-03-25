@@ -24,6 +24,7 @@ args_cli = parser.parse_args()
 
 def merge_datasets():
     for filepath in args_cli.input_files:
+        print(f"Validating existence of input file: {filepath}")
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"The dataset file {filepath} does not exist.")
 

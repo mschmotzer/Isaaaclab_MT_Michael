@@ -30,12 +30,13 @@ def get_default_args():
     
     # Transformer parameters
     args.enc_layers = 4
-    args.dec_layers = 6
-    args.dim_feedforward = 2048
-    args.hidden_dim = 256
+    args.enc_decoder_layers = 4
+    args.dec_layers = 7
+    args.dim_feedforward = 3200
+    args.hidden_dim = 512
     args.dropout = 0.1
     args.nheads = 8
-    args.num_queries = 400
+    args.num_queries = 64
     args.pre_norm = False
     
     # Segmentation

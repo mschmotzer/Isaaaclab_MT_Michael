@@ -61,9 +61,14 @@ parser.add_argument("--enable_pinocchio", default=False, action="store_true", he
 # Arguments for observation logging
 parser.add_argument("--save_observations", action="store_true", default=False, help="Save successful observations to file.")
 parser.add_argument("--obs_output_file", type=str, default="successful_observations.csv", help="Output file path for saved observations.")
+parser.add_argument("--success_output_file_dir", type=str, default="data_storage", help="Output file path for saved observations.")
 parser.add_argument("--csv_output_file", type=str, default="successful_observations.csv", help="Output CSV file path for detailed observations.")
 parser.add_argument('--velocity_control', action='store_true')
 parser.add_argument('--context_length', type=int, default=1, help='context_length')
+parser.add_argument('--action_length', type=int, default=1, help='action_length')
+parser.add_argument('--k_value', type=float, nargs="*",default=[], help='action_length')
+
+
 parser.add_argument("--custom_cube_poses", type=str, default=None, required=False, 
                    help="JSON file path with custom cube configurations")
 # append AppLauncher cli args
@@ -106,7 +111,8 @@ def rollout(
     trial_id=0,
     velocity_control=False,
     context_length=1,
-    trial =0
+    k= 0.01,
+    action_length = 1,
 ):
     """
     Memory-safe rollout for ACT policy in Isaac Lab
@@ -131,7 +137,7 @@ def rollout(
     observation_log = [] if save_observations else None
 
     # === Cache exponential weights ONCE ===
-    num_queries = 64#policy.num_queries
+    num_queries =64#policy.num_queries
     action_dim = env.action_space.shape[1]
     all_time_actions = torch.zeros(
         horizon,
@@ -140,13 +146,10 @@ def rollout(
         device=device,
     )
 
-
     # === Rollout loop ===
     buffer_pos =[]
     buffer_vel =[]
     buffer_images = []
-    import time
-    time_1 =time.time()
     for t in range(horizon):
 
         # ------------------------------------------------------------------
@@ -164,14 +167,14 @@ def rollout(
         qpos_new = env.scene["robot"].data.joint_pos.squeeze(0)[:-1] #policy_obs["joint_pos"].squeeze(0)
         qvel_new = env.scene["robot"].data.joint_vel.squeeze(0)[:-1] #policy_obs["joint_vel"].squeeze(0)[:-1] if args_cli.velocity_control else None   
         # Images: convert once, no storing
+
+        # 4.5637e-01,  5.1157e-02,  3.2267e-02
         def process_image(img: torch.Tensor, device):
             if img.dim() == 4:
                 img = img.squeeze(0)  # remove batch/env dim
             # Ensure shape [C, H, W]
             img = img.permute(2, 0, 1)
             return img.to(device)
-
-        from torchvision.utils import save_image
         
         img1_new = process_image(policy_obs["image"], device)
         #save_image(img1_new, f'image_1_{trial}_{-(time_1 - time.time())}.png')
@@ -180,6 +183,8 @@ def rollout(
 
         images_new = torch.stack([img1_new, img2_new], dim=0)      # [2, C, H, W]
         images_new = (images_new.float() / 255.0).unsqueeze(0)   # [1, C, H, W]
+
+
         buffer_pos.append(qpos_new)
         buffer_vel.append(qvel_new)
         buffer_images.append(images_new)
@@ -194,8 +199,7 @@ def rollout(
                 buffer_images.append(images_new)    
         qpos = torch.stack(buffer_pos, dim=0)
         qvel = torch.stack(buffer_vel, dim=0) if velocity_control else None
-        images = torch.cat(buffer_images, dim=0)
-        images = images.permute(1,0,2,3,4)  # [1, 2, C, H, W] -> [1, C, 2, H, W]
+        images = torch.cat(buffer_images, dim=0).permute(1,0,2,3,4)  # [1, 2, C, H, W] -> [1, C, 2, H, W]
 
 
         # ------------------------------------------------------------------
@@ -210,18 +214,18 @@ def rollout(
                 qvel=pre_process_qvel(qvel).unsqueeze(0) if velocity_control else None,
             )  # [1, Q, action_dim]
             # store future predictions
-            all_time_actions[[t], t : t + actions.shape[1]] = actions[0, :, :]
-
+            all_time_actions[[t], t : t + action_length] = actions[0, :action_length, :]
+            #all_time_actions[[t], t : t + int(actions.shape[1]/2),-1] = actions[0, :int(actions.shape[1]/2), -1]
+            #all_time_actions[[t], t : t + 32] = actions[0, :32, :]
             # gather predictions for current timestep
             actions_t = all_time_actions[:, t]  # [T, action_dim]
 
             valid = torch.any(actions_t != 0, dim=1)
             actions_t = actions_t[valid]
-
             #exponential weighting (older = stronger)
             N = actions_t.shape[0]
-            """beta =  0.25
-            k_cutoff = 0.75
+            """beta =  0.5
+            k_cutoff = 0.5
             if N < 5:
                 raw_action = actions_t.mean(dim=0, keepdim=True)
 
@@ -229,10 +233,9 @@ def rollout(
                 # Compute dynamic k over full action vector
                 sigma = torch.std(actions_t[:,:3], dim=0)           # [action_dim]
                 k = 1 * torch.max(torch.abs(sigma))        # scalar
-                print(k)
                 # Cutoff → disable temporal ensembling
                 if k > k_cutoff:
-                    raw_action = actions[0, 0:1]  # first action from current chunk
+                    raw_action = actions_t[-1, :]  # first action from current chunk
                 else:
                     idx = torch.arange(N, device=device)
 
@@ -244,11 +247,15 @@ def rollout(
 
             action = post_process(raw_action)
             action = action.view(1, action_dim)"""
-            k = 0.1
             weights = torch.exp(-k * torch.arange(N, device=device))
             weights = (weights / weights.sum()).unsqueeze(1)
+            #gripper = post_process(actions_t)[:,-1].sum(dim=0)
+            #gripper_action = -1 if gripper < 0 else 1
             raw_action = (actions_t * weights).sum(dim=0, keepdim=True)
+            #raw_action[:,-1] = gripper_action
             action = post_process(raw_action)
+            """if qpos[-1,-1] < 0.02: #if gripper is closed without cube open
+                action[:,-1] = 1"""
 
         action = action.view(1, action_dim)
 
@@ -261,19 +268,10 @@ def rollout(
         # 4. Optional logging (CPU ONLY)
         # ------------------------------------------------------------------
         if save_observations:
-            def to_numpy(obj):
-                if torch.is_tensor(obj):
-                    return obj.detach().cpu().numpy()
-                if isinstance(obj, dict):
-                    return {k: to_numpy(v) for k, v in obj.items()}
-                if isinstance(obj, (list, tuple)):
-                    return type(obj)(to_numpy(v) for v in obj)
-                return obj
-
             observation_log.append({
                 "step": t,
-                "obs": to_numpy(policy_obs),
-                "action": to_numpy(action),
+                "obs": obs.detach().cpu().numpy(),
+                "action": action.detach().cpu().numpy(),
             })
 
         # ------------------------------------------------------------------
@@ -410,27 +408,25 @@ def main():
     lr_backbone = 1e-5
     backbone = 'resnet18'
 
-    enc_layers = 4
-    dec_layers = 6
+    enc_layers = 6
+    enc_dec_layers = 6
+    dec_layers = 9
     nheads = 8
     policy_config = {   'ckpt_dir': args_cli.checkpoint,
                         'num_queries': 64,
                         'lr_backbone': lr_backbone,
                         'backbone': backbone,
                         'enc_layers': enc_layers,
+                        'enc_decoder_layers': enc_dec_layers,
                         'dec_layers': dec_layers,
                         'nheads': nheads,
                         'camera_names': ["image", "image2"],
                         'velocity_control': args_cli.velocity_control,
                         'context_length': args_cli.context_length
                         }
-    from act_copy.policy_runner import ACTPolicy
-    policy = ACTPolicy(policy_config)
-    loading_status = policy.load_state_dict(torch.load(args_cli.checkpoint))
-    policy.cuda()
-    policy.eval()
+
     # Read sequence_length from the policy configuration
-    
+
     # Run policy
     results = []
     all_successful_observations = []
@@ -458,76 +454,108 @@ def main():
     if args_cli.custom_cube_poses is not None:
         cube_configurations = load_custom_cube_configurations(args_cli.custom_cube_poses)
         current_config_index = 0
-    for trial in range(args_cli.num_rollouts):
-        print(f"[INFO] Starting trial {trial}")
+    if len(args_cli.k_value) == 0:
+        k_value = [0.01]
+    else:
+        k_value = args_cli.k_value 
 
-        if args_cli.custom_cube_poses is not None:
-            current_config = cube_configurations[current_config_index]
-            current_poses = current_config["poses"]
-            
-            print(f"\n[INFO] Trial {trial}/{args_cli.num_rollouts}")
-            print(f"[INFO] Using configuration: {current_config['name']}")
-            print(f"[INFO] Description: {current_config.get('description', 'N/A')}")
-            
-            # Print cube positions for verification
-            print(f"[INFO] Expected cube positions:")
-            for i, pose in enumerate(current_poses):
-                pos = pose["pos"]
-                print(f"  Cube {i+1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
-            
-            # For trials after the first, update the environment's event configuration
-            if trial > 0:
-                print(f"[INFO] Updating environment events for configuration: {current_config['name']}")
-                update_environment_events(env, current_poses)
-            current_config_index = (current_config_index + 1) % len(cube_configurations)
-        success, obs_log = rollout(
-                policy,
-                env,
-                success_term,
-                args_cli.horizon,
-                device,
-                stats_torch,
-                save_observations=args_cli.save_observations,
-                trial_id=trial,
-                velocity_control=args_cli.velocity_control,
-                context_length=args_cli.context_length,
-                trial =trial    
-        )       
-        results.append(success)
-        
-        # Collect successful observations if --save_observations is enabled
-        # Only save data from successful trials
-        if args_cli.save_observations and obs_log is not None:
-            all_successful_observations.append({
-                "trial": trial,
-                "observations": obs_log,
-                "success": True,
-                "metadata": {
-                    "task": args_cli.task,
-                    "checkpoint": args_cli.checkpoint,
-                    "horizon": args_cli.horizon,
-                    "frequency_hz": 20,
-                    "dt": 0.05,
-                    "total_steps": len(obs_log),
-                    "norm_factor_min": args_cli.norm_factor_min,
-                    "norm_factor_max": args_cli.norm_factor_max
-                }
-            })
-            
-            # Collect CSV data from successful trials
-            
-        
-        print(f"[INFO] Trial {trial}: {success}\n")
+    data_dir = args_cli.success_output_file_dir
+    os.makedirs(data_dir, exist_ok=True)
 
-        print(f"\nSuccessful trials: {results.count(True)}, out of {len(results)} trials")
-        print(f"Success rate: {results.count(True) / len(results)}")
-        print(f"Trial Results: {results}\n")
+    
+    for i, k in enumerate(k_value):  # Just a single k value for now
+        from act_copy.policy_runner import ACTPolicy
+        policy = ACTPolicy(policy_config)
+        loading_status = policy.load_state_dict(torch.load(args_cli.checkpoint))
+        policy.cuda()
+        policy.eval()
+        print(f"[INFO] Using k value: {k}")
+        for trial in range(args_cli.num_rollouts):
+            policy = ACTPolicy(policy_config)
+            loading_status = policy.load_state_dict(torch.load(args_cli.checkpoint))
+            policy.cuda()
+            policy.eval()
+            #print(f"[INFO] Starting trial {trial}")
+
+            if args_cli.custom_cube_poses is not None:
+                current_config = cube_configurations[current_config_index]
+                current_poses = current_config["poses"]
+                
+                print(f"\n[INFO] Trial {trial}/{args_cli.num_rollouts}")
+                print(f"[INFO] Using configuration: {current_config['name']}")
+                print(f"[INFO] Description: {current_config.get('description', 'N/A')}")
+                
+                # Print cube positions for verification
+                print(f"[INFO] Expected cube positions:")
+                for i, pose in enumerate(current_poses):
+                    pos = pose["pos"]
+                    print(f"  Cube {i+1}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
+                
+                # For trials after the first, update the environment's event configuration
+                if trial > 0:
+                    print(f"[INFO] Updating environment events for configuration: {current_config['name']}")
+                    update_environment_events(env, current_poses)
+                current_config_index = (current_config_index + 1) % len(cube_configurations)
+            success, obs_log = rollout(
+                    policy,
+                    env,
+                    success_term,
+                    args_cli.horizon,
+                    device,
+                    stats_torch,
+                    save_observations=args_cli.save_observations,
+                    trial_id=trial,
+                    velocity_control=args_cli.velocity_control,
+                    context_length=args_cli.context_length,   
+                    k = k,
+                    action_length = args_cli.action_length, 
+            )       
+            results.append(success)
+            
+            # Collect successful observations if --save_observations is enabled
+            # Only save data from successful trials
+            if success and args_cli.save_observations and obs_log is not None:
+                all_successful_observations.append({
+                    "trial": trial,
+                    "observations": obs_log,
+                    "success": True,
+                    "metadata": {
+                        "task": args_cli.task,
+                        "checkpoint": args_cli.checkpoint,
+                        "horizon": args_cli.horizon,
+                        "frequency_hz": 20,
+                        "dt": 0.05,
+                        "total_steps": len(obs_log),
+                        "norm_factor_min": args_cli.norm_factor_min,
+                        "norm_factor_max": args_cli.norm_factor_max
+                    }
+                })
+                
+                # Collect CSV data from successful trials
+                
+            
+            #print(f"[INFO] Trial {trial}: {success}\n")
+        log_file = os.path.join(data_dir, f"k_value_{k}_action_length_{args_cli.action_length}_results.txt")
+
+        with open(log_file, "w") as f:
+            original_stdout = sys.stdout
+            sys.stdout = f  # redirect prints to file
+
+            print(f"\n=== Results for k = {k}, action_length = {args_cli.action_length} ===")
+            print(f"\nSuccessful trials: {results.count(True)}, out of {len(results)} trials")
+            print(f"Success rate: {results.count(True) / len(results)}")
+            print(f"Trial Results: {results}\n")
+            sys.stdout = original_stdout 
+      
         """if results.count(True) > best_success:
             best_success = results.count(True)
             best_start = start
             best_end = end"""
-    print(f"Best start: {best_start}, Best end: {best_end}, with success: {best_success} out of {len(results)}")
-
+        print(f"\n=== Results for k = {k}, action_length = {args_cli.action_length} ===")
+        print(f"\nSuccessful trials: {results.count(True)}, out of {len(results)} trials")
+        print(f"Success rate: {results.count(True) / len(results)}")
+        print(f"Trial Results: {results}\n")
+        results= []
     # Save all successful observations (if enabled and collected)
     if args_cli.save_observations and all_successful_observations:
         # Get the directory from the CSV output file path

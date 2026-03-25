@@ -18,22 +18,75 @@ class ACTPolicy(nn.Module):
         self.kl_weight = args_override['kl_weight']
 
 
-    def __call__(self, qpos, image, actions=None, is_pad=None, qvel=None, epoch = 0):
+    def __call__(self, qpos, image, actions=None, is_pad=None, qvel=None, subtask_label=None, epoch = 0):
         env_state = None
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
         image = normalize(image)
-        if actions is not None: # training time
+        if actions is not None:  # training time
             actions = actions[:, :self.model.num_queries]
             is_pad = is_pad[:, :self.model.num_queries]
-            a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state, qvel=qvel, actions=actions, is_pad=is_pad)
+
+            a_hat, is_pad_hat, (mu, logvar) = self.model(
+                qpos, image, env_state, qvel=qvel, actions=actions, is_pad=is_pad, subtask_label=subtask_label
+            )
+
             total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
-            loss_dict = dict()
+
+            loss_dict = {}
+
             all_l1 = F.l1_loss(actions, a_hat, reduction='none')
+            # split actions
+            """pos      = actions[..., 0:3]
+            quat     = actions[..., 3:7]
+            gripper  = actions[..., 7]
+
+            pos_hat     = a_hat[..., 0:3]
+            quat_hat    = a_hat[..., 3:7]
+            gripper_hat = a_hat[..., 7]
+
+            # padding mask
+            mask = (~is_pad).float()  # [B, T]
+
+            # --- position loss (Huber is best for BC) ---
+            pos_l = F.smooth_l1_loss(pos_hat, pos, reduction='none')  # [B, T, 3]
+            pos_l = (pos_l.sum(-1) * mask).sum() / mask.sum()
+
+            # --- quaternion loss (angular distance) ---
+            quat = F.normalize(quat, dim=-1)
+            quat_hat = F.normalize(quat_hat, dim=-1)
+
+            dot = torch.sum(quat * quat_hat, dim=-1).abs()  # [B, T]
+            quat_l = (1.0 - dot) * mask
+            quat_l = quat_l.sum() / mask.sum()
+
+            # --- gripper loss ---
+            grip_l = F.mse_loss(gripper_hat, gripper, reduction='none')  # [B, T]
+            grip_l = (grip_l * mask).sum() / mask.sum()
+
+            # --- weighted reconstruction loss ---
+            all_l1 = (
+                1.0 * pos_l +
+                0.5 * quat_l +
+                0.1 * grip_l
+            )"""
+
             l1 = (all_l1 * ~is_pad.unsqueeze(-1)).mean()
             loss_dict['l1'] = l1
             loss_dict['kl'] = total_kld[0]
-            loss_dict['loss'] = loss_dict['l1'] + loss_dict['kl'] * self.kl_weight
+
+            # ---- beta scheduling ----
+            warmup_epochs = 0
+
+            if epoch < warmup_epochs:
+                beta = 0.0
+            else:
+                beta = min(
+                    1.0,
+                    1.0 / (1.0 + np.exp(-(epoch - 2500) / 500))
+                )
+
+            loss_dict['loss'] = l1 + beta * total_kld[0]
             return loss_dict
         else: # inference time
             a_hat, _, (_, _) = self.model(qpos, image, env_state, qvel) # no action, sample from prior

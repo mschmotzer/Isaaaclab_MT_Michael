@@ -1,13 +1,13 @@
 import pathlib
 
 ### Task parameters
-DATA_DIR = 'data/annotated_16_07_new_obs.hdf5' #'data_storage/mimic_teleop_4_headless_new_cam_pos.hdf5' #'/home/pdz/MasterThesis_MSC/ACT_org/unormalized_images_200_demos.hdf5' #/home/pdz/generated_dataset_15_01_26.hdf5'#
+DATA_DIR = 'data_storage/datasets/mimic_800_simplfied_task.hdf5' #'data_storage/mimic_teleop_4_headless_new_cam_pos.hdf5' #'/home/pdz/MasterThesis_MSC/ACT_org/unormalized_images_200_demos.hdf5' #/home/pdz/generated_dataset_15_01_26.hdf5'#
 SIM_TASK_CONFIGS = {
     'sim_transfer_cube_scripted':{
         'dataset_dir': DATA_DIR ,
-        'num_episodes': 20,
+        'num_episodes': 445,
         'episode_len': 480,
-        'camera_names': ['image', 'image2']
+        'camera_names': ['image','image2']
     },
 
     'sim_transfer_cube_human':{

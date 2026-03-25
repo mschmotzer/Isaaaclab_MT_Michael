@@ -17,7 +17,7 @@ cd annotated_dataset_06_06.hdf5 --output_file ./datasets/generated_dataset_small
 5. Validate trained BC-Policy
 ./isaaclab.sh -p scripts/imitation_learning/robomimic/play.py --device cuda --task Isaac-Stack-Cube-Franka-IK-Abs-v0 --num_rollouts 100 --checkpoint /home/pdzuser/IsaacLab/logs/robomimic/Isaac-Stack-Cube-Franka-IK-Abs-v0/bc_rnn_low_dim_franka_stack/20250610170408/models/model_epoch_2000.pth
 
-
+./isaaclab.sh -p scripts/imitation_learning/robomimic/play_diffusionpolicy.py --device cuda --task Isaac-Stack-Cube-Franka-IK-Abs-DiffusionPolicy-RGB-v0 --num_rollouts 10 --checkpoint logs/robomimic/Isaac-Stack-Cube-Franka-IK-Abs-DiffusionPolicy-RGB-v0/test/20260129093425/models/model_epoch_150.pth --enable_cameras --temporal_agg
 
 
 ./isaaclab.sh -p scripts/imitation_learning/robomimic/play_custom_cubes.py   --device cuda  --task Isaac-Stack-Cube-Franka-IK-Abs-v0  --checkpoint logs/robomimic/Isaac-Stack-Cube-Franka-IK-Abs-v0_generated_dataset_16_07_real_dynamics_5000_new_param1/bc_rnn_low_dim_franka_stack/20250723103704/models/model_epoch_2000.pth --custom_cube_poses /home/pdzuser/IsaacLab/scripts/imitation_learning/robomimic/data/random_cube_configurations.json   --num_rollouts 12 --horizon 800 --seed 101  --save_observations --obs_output_file results/custom_cube_observations.pkl 
@@ -32,3 +32,14 @@ logs/robomimic/Isaac-Stack-Cube-Franka-IK-Abs-v0/bc_rnn_low_dim_franka_stack/202
 
 
 ./isaaclab.sh -p scripts/imitation_learning/robomimic/train.py --task Isaac-Stack-Cube-Franka-IK-Abs-Transformer-RGB-v0 --algo bc --dataset /media/pdz/Elements1/MichaelMA_data/Datasets/nowworksplease_over_night.hdf5
+
+
+
+
+ACt Training:
+
+python3 act_copy/imitate_episodes.py --task_name sim_transfer_cube_s
+cripted --ckpt_dir /media/pdz/Elements1/tw_cams_eval_test --policy_class ACT --kl_weight 10  --chunk_size 32 --hidden_dim 64 --batch_size 64 --dim_feedforward 128 --num_ep
+ochs 3000 --lr 1e-5 --seed 1 --temporal_agg --context_length 3 --dropout 0.3
+
+./isaaclab.sh -p scripts/imitation_learning/robomimic/play_cvae.py --device cuda --task Isaac-Stack-Cube-Franka-IK-Abs-Transformer-RGB-v0 --num_rollouts 10 --checkpoint /home/pdz/MasterThesis_MSC/Results_EUler/small_ws_800/policy_best.ckpt --enable_cameras --data_path /home/pdz/MasterThesis_MSC/Results_EUler/small_ws_800/ --velocity_control --context_length 4 --seed 1 --horizon 700 --headless

@@ -64,6 +64,7 @@ class Transformer(nn.Module):
 
                 additional_pos_embed = additional_pos_embed + temporal
                 additional_pos_embed = additional_pos_embed.unsqueeze(1).unsqueeze(1).repeat(1, bs,1,  1) # seq, bs, dim
+
             pos_embed = torch.cat([additional_pos_embed, pos_embed], axis=0).squeeze(2)
 
             if velocity_input is not None and proprio_input is not None:
@@ -301,12 +302,13 @@ def _get_clones(module, N):
 
 
 def build_transformer(args):
+    print("Building transformer with {} encoder layers".format(args.enc_decoder_layers))
     return Transformer(
         d_model=args.hidden_dim,
         dropout=args.dropout,
         nhead=args.nheads,
         dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
+        num_encoder_layers=args.enc_decoder_layers,
         num_decoder_layers=args.dec_layers,
         normalize_before=args.pre_norm,
         return_intermediate_dec=True,

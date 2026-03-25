@@ -3,7 +3,7 @@ import shutil
 import os
 import sys
 
-src_file = "/home/pdz/MasterThesis_MSC/IsaacLab/datasets/Datasets_benchmarking/annotated_RGB_data_new_obs_nostates_new_obs.hdf5"   # <-- put your real file here
+src_file = "/media/pdz/Elements1/merged.hdf5"   # <-- put your real file here
 base, ext = os.path.splitext(src_file)
 output_path = f"{base}_nostatesnoobs{ext}"
 
@@ -25,12 +25,15 @@ data_group = f["data"]
 
 for demo in list(data_group.keys()):
     demo_group = data_group[demo]
-    if "states" in demo_group:
+    """if "states" in demo_group:
         print(f"Deleting states in: {demo}")
-        del demo_group["states"]
+        del demo_group["states"]"""
     if "obs" in demo_group:
-        print(f"Deleting obs in: {demo}")
-        del demo_group["obs"]
+        print(f"Clearing obs in: {demo}")
+        obs_group = demo_group["obs"]
+        for key in list(obs_group.keys()):
+            del obs_group[key]
+
 
 f.close()
 

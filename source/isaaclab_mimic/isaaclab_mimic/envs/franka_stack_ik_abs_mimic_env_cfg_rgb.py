@@ -84,7 +84,7 @@ class FrankaCubeStackIKAbsMimicEnvCfgRGB(FrankaCubeStackEnvCfgRGB, MimicEnvCfg):
         subtask_configs.append(
             SubTaskConfig(
                 object_ref="cube_2",
-                subtask_term_signal="stack_2",  # Fixed: added comma and lowercase
+                subtask_term_signal = None,  # Fixed: added comma and lowercase
                 subtask_term_offset_range=(0,0),
                 selection_strategy="nearest_neighbor_object",
                 selection_strategy_kwargs={"nn_k": 3},

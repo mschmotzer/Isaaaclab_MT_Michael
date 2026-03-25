@@ -34,6 +34,21 @@ def set_default_joint_pose(
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
     # Set the default pose for robots in all envs
+    print("*"*50)
+
+    defautltPoses = torch.tensor([[-1.3096, -0.2541,  1.7620, -2.5588,  0.4946,  2.6142,  0.7681,  0.0400,
+                        0.0400],
+                [-2.3994, -0.3736,  2.1516, -2.2845,  0.5635,  2.4633,  0.1030,  0.0400,
+                        0.0400],
+                [-1.9887, -0.3033,  1.9701, -2.3952,  0.5125,  2.5122,  0.3766,  0.0400,
+                        0.0400],
+                [-1.6064, -0.2396,  1.6634, -2.4589,  0.4315,  2.4887,  0.4785,  0.0400,
+                        0.0400],
+                [-2.1768, -0.4085,  2.1978, -2.3489,  0.6540,  2.5508,  0.2731,  0.0400,
+                        0.0400],
+                [-1.7683, -0.2319,  1.8894, -2.4988,  0.4540,  2.5800,  0.5121,  0.0400,
+                        0.0400]])
+    default_pose = defautltPoses[random.randint(0,5)]
     asset = env.scene[asset_cfg.name]
     asset.data.default_joint_pos = torch.tensor(default_pose, device=env.device).repeat(env.num_envs, 1)
 
@@ -252,8 +267,11 @@ def sample_object_poses(
 
     for i in range(num_objects):
         for j in range(max_sample_tries):
+            """if i == 5:
+                
+                sample = [4.7976e-01, 6.0969e-02, 2.0300e-02, 4.6329e-05, 0.0000e+00, 0.0000e+00,1.0000e+00]
+            else:"""
             sample = [random.uniform(range[0], range[1]) for range in range_list]
-
             # Accept pose if it is the first one, or if reached max num tries
             if len(pose_list) == 0 or j == max_sample_tries - 1:
                 pose_list.append(sample)

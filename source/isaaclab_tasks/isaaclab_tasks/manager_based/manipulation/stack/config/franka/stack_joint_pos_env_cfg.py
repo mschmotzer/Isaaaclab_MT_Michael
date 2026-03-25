@@ -52,7 +52,7 @@ class EventCfg:
         mode="reset",
         params={
             "mean": 0.0,
-            "std": 0.005,
+            "std": 0.01,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -309,7 +309,7 @@ class FrankaCubeStackEnvCfgRGB(StackEnvCfgRGB):
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.4, 0.0, 0.0203], rot=[1, 0, 0, 0]),    # type: ignore
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd",
-                scale=(1,1,1),
+                scale=(2.5, 2.5, 0.01),
                 rigid_props=cube_properties,
                 semantic_tags=[("class", "cube_1")],
                 visual_material=sim_utils.PreviewSurfaceCfg(
@@ -339,11 +339,11 @@ class FrankaCubeStackEnvCfgRGB(StackEnvCfgRGB):
                 rigid_props=cube_properties,
                 semantic_tags=[("class", "cube_3")],
                 visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=( 30.0/255.0,80.0/255.0, 0.00/255.0)  # RGB color
+                    diffuse_color= (30.0/255.0,80.0/255.0, 0.00/255.0)  # RGB color0.0, 0.0, 0.0)#
                 ),
             ),
         )
-
+        
         # Listens to the required transforms
         marker_cfg = FRAME_MARKER_CFG.copy()
         marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)

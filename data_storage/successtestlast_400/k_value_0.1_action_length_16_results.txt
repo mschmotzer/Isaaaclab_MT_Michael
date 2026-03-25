@@ -1,0 +1,7 @@
+
+=== Results for k = 0.1, action_length = 16 ===
+
+Successful trials: 5, out of 10 trials
+Success rate: 0.5
+Trial Results: [True, False, True, True, False, True, True, False, False, False]
+

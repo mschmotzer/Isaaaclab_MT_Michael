@@ -637,7 +637,6 @@ class DataGenerator:
     def closest_cube(self, cube_positions: np.ndarray, ee_position: np.ndarray) -> int:
         if len(cube_positions) == 0:
             return -1
-        print("ee_position++++++++++++++++++++++++++++++++++++++++++++++", ee_position)
         distances = np.linalg.norm(cube_positions - ee_position, axis=1)
         return np.argmin(distances)
 
@@ -662,18 +661,23 @@ class DataGenerator:
                 not moving[i]):
                 stacked[i] = True
         return stacked, moving
-    def collide(self, stacked , moving, cube_positions: np.ndarray, min_dist: float = 3*0.052) -> bool:
+    def collide(self, stacked , moving, cube_positions: np.ndarray, min_dist: float = 2*0.052) -> bool:
         if len(cube_positions) == 0:
             return True
         for i in range(len(cube_positions)-1):
+                
                 if stacked[i] or moving[i+1]:  
                     continue
                 dist = np.linalg.norm(cube_positions[i,:2] - cube_positions[i+1,:2])
+                if i ==0 :
+                    dist2 = np.linalg.norm(cube_positions[i,:2] - cube_positions[i+2,:2])
                 if dist < min_dist:
+                    return False
+                elif i == 0 and dist2 < min_dist and not (stacked[i+1] or moving[i+2]):
                     return False
         return True
    
-    def randomize_bottleneck(self, cur_pos, datagen_info, state_index):
+    """def randomize_bottleneck(self, cur_pos, datagen_info, state_index):
         state = self.get_state(datagen_info, state_index)
         #print("STATE INDEX: ", state_index)
         cube_positions = []
@@ -751,6 +755,84 @@ class DataGenerator:
             if self.collide(stacked=stacked, moving= moving, cube_positions=cube_positions):
                 #print("No collisions detected. Final cube positions:", cube_positions)
                 break
+        return cur_pos,cube_positions, cube_names, cubes_moved"""
+    def randomize_bottleneck(self, cur_pos, datagen_info, state_index):
+        state = self.get_state(datagen_info, state_index)
+        #print("STATE INDEX: ", state_index)
+        cube_positions = []
+        cube_velocities = []
+        cube_names = []
+        cur_pos = cur_pos.detach().cpu().numpy()
+        # Extract cube positions and velocities
+        for obj_name, obj_data in state['rigid_object'].items():
+            if 'cube' in obj_name.lower() and 'root_pose' in obj_data:
+                position = obj_data['root_pose'][:3].detach().cpu().numpy()
+                velocity = obj_data['root_velocity'][:3].detach().cpu().numpy()
+                cube_positions.append(position)
+                cube_velocities.append(velocity)
+                cube_names.append(obj_name)
+
+        cube_positions = np.array(cube_positions)
+        cubes_moved = np.ones(len(cube_positions), dtype=bool)
+        #print("CUBE POSITIONS Before: ", cube_positions)
+        cube_positions_mem = cube_positions
+        cube_velocities = np.array(cube_velocities)
+        #print("CUBE VELOCITIES: ", cube_velocities.shape)
+        closest_cube_idx = self.closest_cube(cube_positions, cur_pos[:3, -1])
+        #print("CLOSEST CUBE IDX: ", closest_cube_idx)
+        stacked, moving = self.check_stacked(cube_positions=cube_positions, cube_velocities=cube_velocities)
+        print("STACKED: ", stacked)
+        print("MOVING: ", moving)
+        while True:
+            i = 0
+            cube_positions = cube_positions_mem
+            while i < len(cube_positions):
+                #print("i: ", i)
+                offset_y = np.random.uniform(-0.1, 0.1)
+                offset_x = np.random.uniform(0.4, 0.6)
+                offset_x = np.clip(offset_x, 0.4, 0.6)
+                offset_y = np.clip(offset_y, -0.1, 0.1)
+                #print("OFFSET X,Y: ", offset_x, offset_y)
+                if i+1 < len(stacked) and stacked[i]:
+                    cube_positions[i][0] = offset_x
+                    cube_positions[i][1] = offset_y
+                    cube_positions[i + 1][0] = offset_x
+                    cube_positions[i + 1][1] = offset_y
+                    i+=1
+                    if stacked[i]:
+                        cur_pos[0, -1] = offset_x
+                        cur_pos[1, -1] = offset_y
+                        i+=1
+                    elif i+1 < len(moving) and moving[i+1]:
+                        cur_pos[0, -1] = offset_x
+                        cur_pos[1, -1] = offset_y
+                        #cur_pos[2, -1] += 0.005
+                        cubes_moved[i+1] = False
+                        i+=1
+                    if i == closest_cube_idx:
+                        cur_pos[0, -1] = offset_x
+                        cur_pos[1, -1] = offset_y
+                elif i+1 < len(moving) and moving[i+1]:
+                    cube_positions[i][0] = offset_x
+                    cube_positions[i][1] = offset_y
+                    cur_pos[0, -1] = offset_x
+                    cur_pos[1, -1] = offset_y  
+                    #cur_pos[2, -1] += 0.005                                     
+                    cubes_moved[i+1] = False
+                    i+=1
+                elif i == closest_cube_idx:
+                    cube_positions[i][0] = offset_x
+                    cube_positions[i][1] = offset_y
+                    cur_pos[0, -1] = offset_x
+                    cur_pos[1, -1] = offset_y
+                else:
+                    cube_positions[i][0] = offset_x
+                    cube_positions[i][1] = offset_y
+                i+=1
+            print("Cube Positions:  ", cube_positions)
+            if self.collide(stacked=stacked, moving= moving, cube_positions=cube_positions):
+                #print("No collisions detected. Final cube positions:", cube_positions)
+                break
         return cur_pos,cube_positions, cube_names, cubes_moved
     async def generate_backward_augment(
         self,
@@ -809,10 +891,10 @@ class DataGenerator:
                 self.env.reset_to(state=state, env_ids=env_id_tensor, is_relative=False)
             except Exception as e:
                 print(f"[BA] Could not restore full state from observation: {e}")
-        rand_number_state=np.random.randint(42,46)
+        rand_number_state=np.random.randint(42,48)
         grip= None
         half = int(np.floor(rand_number_state/3*2))
-        halfplus = int(half/2)
+        halfplus = int(half/3*2)
 
 
         
@@ -845,7 +927,7 @@ class DataGenerator:
         eef_pose_bn = torch.tensor(eef_pose_bn[:3, 3], device=ee_traj.device, dtype=ee_traj.dtype)
         ee_traj[:,:3, 3] -=  eef_pose_bn
         eef_pose_bn = cur_T
-
+        state1 = self.env.scene.get_state(is_relative=False)
         for i in range(50):
             waypoint = Waypoint(
                     pose=torch.from_numpy(cur_T).to(self.env.device),
@@ -868,14 +950,12 @@ class DataGenerator:
                 new_pos = new_cube_positions[i]
                 #print("__________________________________________",obj_name, new_pos)
                 # Replace the first three values of root_pose with the new position
-                old_pose = state['rigid_object'][obj_name]['root_pose']
+                old_pose = state1['rigid_object'][obj_name]['root_pose']
                 old_pose[0,:3] = torch.tensor(new_pos, dtype=old_pose.dtype, device=old_pose.device)
                 old_pose[0,3:] = torch.tensor(np.array([0,0,0,1]), dtype=old_pose.dtype, device=old_pose.device)
                 state['rigid_object'][obj_name]['root_pose'] = old_pose
-        #print("State+++++++++++++++++++++++++++++++++++++++++++++++++++++++++", state['rigid_object'])
         self.env.reset_to(state=state, env_ids=env_id_tensor, is_relative=False)
-        #print("RESET EE TO NEW CUBE POSITIONS+++++++++++++++++++++++++++++++++++++++++++++++++++++++++", cur_T[:3,-1])
-        for i in range(50):
+        for i in range(5):
             waypoint = Waypoint(
                     pose=torch.from_numpy(cur_T).to(self.env.device),
                     gripper_action=grip_bn,
@@ -904,7 +984,7 @@ class DataGenerator:
         bn_trajectory = ee_traj_np.copy()
         bn_trajectory[:, :3, 3] = rotated_positions + cur_T_np[:3, 3]  # Update all positions at once
 
-        for i in reversed(range(int(np.floor(len(bn_trajectory))/2))):
+        for i in reversed(range(half)):
             
             T = bn_trajectory[i]
             #print(f"Reversing waypoint {i}, target z: {T[2,3]}")
@@ -933,6 +1013,13 @@ class DataGenerator:
         generated_actions = []
         generated_success = False   
         safe_prev_z = cur_T[2, 3]
+        state = self.env.scene.get_state(is_relative=False)
+        state['rigid_object'][obj_name]['root_pose'] = old_pose
+        self.env.reset_to(state=state, env_ids=env_id_tensor, is_relative=False)
+
+
+        print("="*50)
+
         for i in range(len(bn_trajectory)):
             #print(f"Previous waypoin: {safe_prev_z} current ee pos: {self.env.get_robot_eef_pose(env_ids=[env_id], eef_name=eef_name)[0][2,3]}")
             

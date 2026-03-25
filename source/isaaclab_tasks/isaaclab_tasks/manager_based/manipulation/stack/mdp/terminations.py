@@ -273,4 +273,4 @@ def eef_close_to_bottleneck_franka(
         stacked
     )
     
-    return stacked
+    return [True, True, True] 

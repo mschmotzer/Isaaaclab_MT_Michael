@@ -72,16 +72,17 @@ class DETRVAE(nn.Module):
             self.backbones = None
         
         # encoder extra parameters
-        self.latent_dim = 4 # final size of latent z # TODO tune
+        self.latent_dim = 64 # final size of latent z # TODO tune
         self.cls_embed = nn.Embedding(1, hidden_dim) # extra cls token embedding
         self.encoder_action_proj = nn.Linear(8, hidden_dim) # project action to embedding
+        self.label_proj = nn.Linear(4, hidden_dim) # project subtask label to embedding
         self.encoder_joint_proj = nn.Linear(8, hidden_dim)  # project qpos to embedding
         if velocity_control:
             self.encoder_joint_vel_proj = nn.Linear(8, hidden_dim) # project action to embedding
 
         self.latent_proj = nn.Linear(hidden_dim, self.latent_dim*2) # project hidden state to latent std, var
-        # Position table size: [CLS] + qpos + qvel (if velocity_control) + a_seq
-        pos_table_len = 1 + 1 + (1 if velocity_control else 0) + num_queries
+        # Position table size: label + [CLS] + qpos + qvel (if velocity_control) + a_seq
+        pos_table_len =1 + 1 + 1 + (1 if velocity_control else 0) + num_queries
         self.register_buffer('pos_table',get_sinusoid_encoding_table(pos_table_len, hidden_dim))
 
         # decoder extra parameters
@@ -90,7 +91,7 @@ class DETRVAE(nn.Module):
         additional_pos_size = 3*self.context_length if velocity_control else 2*self.context_length
         self.additional_pos_embed = nn.Embedding(additional_pos_size, hidden_dim)
         self.temporal_embed = nn.Embedding(self.context_length, hidden_dim)        
-    def forward(self, qpos, image, env_state, qvel=None, actions=None, is_pad=None):
+    def forward(self, qpos, image, env_state, qvel=None, actions=None, is_pad=None, subtask_label=torch.zeros(1,1,4), epoch=0):
         """
         qpos: batch, qpos_dim
         image: batch, num_cam, channel, height, width
@@ -102,8 +103,9 @@ class DETRVAE(nn.Module):
         ### Obtain latent z from action sequence
         
         if is_training:            # project action sequence to embedding dim, and concat with a CLS token
-            
             action_embed = self.encoder_action_proj(actions) # (bs, seq, hidden_dim)
+            label_embed = self.label_proj(subtask_label[:,-1,:])  # (bs, hidden_dim)
+            label_embed = torch.unsqueeze(label_embed, axis=1)  # (bs, 1, hidden_dim)
             qpos_short = qpos[:,-1,:]
             qvel_short = qvel[:,-1,:] if qvel is not None else None
             qpos_embed = self.encoder_joint_proj(qpos_short)  # (bs, hidden_dim)
@@ -115,15 +117,15 @@ class DETRVAE(nn.Module):
             cls_embed = self.cls_embed.weight # (1, hidden_dim)
             cls_embed = torch.unsqueeze(cls_embed, axis=0).repeat(bs, 1, 1) # (bs, 1, hidden_dim)
             if qvel is not None:
-                encoder_input = torch.cat([cls_embed, qpos_embed, qvel_embed, action_embed], axis=1) # (bs, seq+3, hidden_dim)
-                encoder_input = encoder_input.permute(1, 0, 2) # (seq+3, bs, hidden_dim)
-                # do not mask cls token, qpos, and qvel
-                cls_joint_is_pad = torch.full((bs, 3), False).to(qpos.device) # False: not a padding
+                encoder_input = torch.cat([cls_embed, qpos_embed, label_embed, qvel_embed, action_embed], axis=1) # (bs, seq+4, hidden_dim)
+                encoder_input = encoder_input.permute(1, 0, 2) # (seq+4, bs, hidden_dim)
+                # do not mask cls token, qpos, label, and qvel
+                cls_joint_is_pad = torch.full((bs, 4), False).to(qpos.device) # False: not a padding
             else:
-                encoder_input = torch.cat([cls_embed, qpos_embed, action_embed], axis=1) # (bs, seq+2, hidden_dim)
-                encoder_input = encoder_input.permute(1, 0, 2) # (seq+2, bs, hidden_dim)
-                # do not mask cls token and qpos
-                cls_joint_is_pad = torch.full((bs, 2), False).to(qpos.device) # False: not a padding
+                encoder_input = torch.cat([cls_embed, qpos_embed, label_embed, action_embed], axis=1) # (bs, seq+3, hidden_dim)
+                encoder_input = encoder_input.permute(1, 0, 2) # (seq+3, bs, hidden_dim)
+                # do not mask cls token, qpos, and label
+                cls_joint_is_pad = torch.full((bs, 3), False).to(qpos.device) # False: not a padding
             is_pad = torch.cat([cls_joint_is_pad, is_pad], axis=1)  # (bs, seq+2 or seq+3)
             # obtain position embedding
             pos_embed = self.pos_table.clone().detach()
@@ -154,9 +156,10 @@ class DETRVAE(nn.Module):
                     #print("Image shape:", image.shape)
                     #print( image[:, cam_id,i].shape)
                     features, pos = self.backbones[cam_id](image[:, cam_id,i]) # HARDCODED
-                    features = features[0] # take the last layer feature
-                    pos = pos[0]
+                    features = features[0-1] # take the last layer feature
+                    pos = pos[-1]
                     pos += self.temporal_embed.weight[i].unsqueeze(1).unsqueeze(2) # add temporal embedding
+
                     all_cam_features.append(self.input_projections[cam_id](features).unsqueeze(1)) 
                     all_cam_pos.append(pos.unsqueeze(1))
             # proprioception features
@@ -171,12 +174,12 @@ class DETRVAE(nn.Module):
             src = torch.cat(all_cam_features, axis=3) # concat on width dimension
             pos = torch.cat(all_cam_pos, axis=3)
             
-            hs = self.transformer(src, None, self.query_embed.weight, pos, latent_input, proprio_input_pos, self.additional_pos_embed.weight, velocity_input = proprio_input_vel, temporal_embed=self.temporal_embed.weight)[0]
+            hs = self.transformer(src, None, self.query_embed.weight, pos, latent_input, proprio_input_pos, self.additional_pos_embed.weight, velocity_input = proprio_input_vel, temporal_embed=self.temporal_embed.weight)[-1]
         else:
             qpos = self.input_proj_robot_state(qpos)
             env_state = self.input_proj_env_state(env_state)
             transformer_input = torch.cat([qpos, env_state], axis=1) 
-            hs = self.transformer(transformer_input, None, self.query_embed.weight, self.pos.weight)[0]
+            hs = self.transformer(transformer_input, None, self.query_embed.weight, self.pos.weight)[-1] #todo [0] zu [-1]
         a_hat = self.action_head(hs)
         is_pad_hat = self.is_pad_head(hs)
         return a_hat, is_pad_hat, [mu, logvar]
@@ -254,13 +257,13 @@ def mlp(input_dim, hidden_dim, output_dim, hidden_depth):
 
 def build_encoder(args):
     d_model = args.hidden_dim # 256
-    dropout = args.dropout # 0.1
+    dropout =  args.dropout # 0.1
     nhead = args.nheads # 8
     dim_feedforward = args.dim_feedforward # 2048
     num_encoder_layers = args.enc_layers # 4 # TODO shared with VAE decoder
     normalize_before = args.pre_norm # False
     activation = "relu"
-
+    print("NUmber of encoder layers:", num_encoder_layers)
     encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                             dropout, activation, normalize_before)
     encoder_norm = nn.LayerNorm(d_model) if normalize_before else None

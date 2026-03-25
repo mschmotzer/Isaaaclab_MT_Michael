@@ -18,7 +18,7 @@ from isaaclab.managers import DatasetExportMode, TerminationTermCfg
 from isaaclab_mimic.datagen.waypoint import MultiWaypoint, Waypoint, WaypointSequence, WaypointTrajectory
 from isaaclab_tasks.manager_based.manipulation.stack.mdp.terminations import eef_close_to_bottleneck_franka
 
-from isaaclab_mimic.datagen.data_generator_juicer_2 import DataGenerator
+from isaaclab_mimic.datagen.data_generator_juicer import DataGenerator
 from isaaclab_mimic.datagen.datagen_info_pool import DataGenInfoPool
 
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg

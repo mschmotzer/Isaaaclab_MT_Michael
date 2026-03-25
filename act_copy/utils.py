@@ -3,7 +3,7 @@ import torch
 import os
 import h5py
 from torch.utils.data import TensorDataset, DataLoader
-
+from ChunkedEpisodicDataset import ChunkedEpisodicDataset
 import IPython
 e = IPython.embed
 
@@ -122,6 +122,25 @@ class EpisodicDataset(torch.utils.data.Dataset):
         with h5py.File(dataset_path, 'r') as root:
             for episode_id in tqdm(self.episode_ids):
                 demo = root['data'][f'demo_{episode_id}']
+
+                gripper_pos = torch.as_tensor(demo['obs/gripper_pos'][:])   # shape (T,)
+                sub_lab1 = gripper_pos[:,0] > 0.03
+                T = sub_lab1.shape[0]
+
+                # 2) Detect state changes (False<->True)
+                changes = torch.zeros(T, dtype=torch.bool)
+                changes[1:] = sub_lab1[1:] != sub_lab1[:-1]
+
+                # 3) Indices of the 4 transitions (guaranteed to exist)
+                change_indices = torch.where(changes)[0]
+                #assert len(change_indices) == 4, f"Expected 4 state changes, got {len(change_indices)}"
+                change_indices = change_indices[:4]
+
+                # 4) One-hot encode the transitions
+                encode_subtask_label = np.zeros((T, 4), dtype=np.float32)
+
+                for i, t in enumerate(change_indices):
+                    encode_subtask_label[t, i] = 1.0
                 self.cache[episode_id] = {
                     #'eef_pos': demo['obs/eef_pos'][()],
                     #'eef_quat': demo['obs/eef_quat'][()],
@@ -129,7 +148,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
                     'qpos': demo['states/articulation/robot/joint_position'][()][:, :-1],
                     **({'qvel': demo['states/articulation/robot/joint_velocity'][()][:, :-1]} if self.velocity_control else {}),
                     'actions': demo['actions'][()],
-                    'images': {cam: demo[f'obs/{cam}'][()] for cam in self.camera_names}
+                    'images': {cam: demo[f'obs/{cam}'][()] for cam in self.camera_names},
+                    'subtask_label': encode_subtask_label
                 }
     
     def __getitem__(self, index):
@@ -139,13 +159,17 @@ class EpisodicDataset(torch.utils.data.Dataset):
             # Use cached data
             data = self.cache[episode_id]
             episode_len = data['actions'].shape[0]
-            max_start = max(0, episode_len - int(self.chunk_size/4) - self.context_length + 1)
+            if episode_len < 50: #to sort juicer episodes
+                max_start = max(0, episode_len - int(self.chunk_size/2) - self.context_length + 1)
+            else:
+                max_start = max(0, episode_len - int(self.chunk_size/4) - self.context_length + 1)
             start_ts = np.random.randint(0, max_start + 1) if max_start > 0 else 0
             
             #eef_pos = data['eef_pos'][start_ts]
             #eef_quat = data['eef_quat'][start_ts]
             #gripper_pos = data['gripper_pos'][start_ts, :-1]
             #qpos = np.concatenate([eef_pos, eef_quat, gripper_pos], axis=0)
+            subtask_label = data['subtask_label'][start_ts:self.context_length + start_ts]
             qpos = data['qpos'][start_ts:self.context_length + start_ts]
             if self.velocity_control:
                 qvel = data['qvel'][start_ts:self.context_length + start_ts]
@@ -176,7 +200,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
                 episode_len = demo['actions'].shape[0]
                 # Random start position ensuring chunk doesn't go out of bounds
-                max_start = max(0, episode_len - int(self.chunk_size/4) - self.context_length + 1)
+                max_start = max(0, episode_len - int(self.chunk_size/8) - self.context_length + 1)
                 start_ts = np.random.randint(0, max_start + 1) if max_start > 0 else 0
 
                 # observation at start_ts
@@ -191,7 +215,24 @@ class EpisodicDataset(torch.utils.data.Dataset):
                     cam_name: demo[f'obs/{cam_name}'][start_ts:self.context_length + start_ts]
                     for cam_name in self.camera_names
                 }
+                gripper_pos = demo['obs/gripper_pos']   # shape (T,)
+                sub_lab1 = gripper_pos[:,0] > 0.3   # shape (T,)
+                T = sub_lab1.shape[0]
 
+                changes = torch.zeros(T, dtype=torch.bool)
+                changes[1:] = (sub_lab1[1:] != sub_lab1[:-1]).any(dim=1)
+
+
+                # 3) Indices of the 4 transitions (guaranteed to exist)
+                change_indices = torch.where(changes)[0]
+                #assert len(change_indices) == 4, f"Expected 4 state changes, got {len(change_indices)}"
+                change_indices = change_indices[:4]
+                # 4) One-hot encode the transitions
+                encode_subtask_label = np.zeros((T, 4), dtype=np.float32)
+
+                for i, t in enumerate(change_indices):
+                    encode_subtask_label[t, i] = 1.0
+                subtask_label = encode_subtask_label[start_ts:self.context_length + start_ts]
                 # full action sequence
                 
                 if is_sim:
@@ -240,6 +281,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         if self.velocity_control:
             qvel_data = torch.from_numpy(qvel).float() 
         action_data = torch.from_numpy(action).float()
+        subtask_label_data = torch.from_numpy(subtask_label).float()
 
         # channel last -> channel first
         image_data = torch.einsum('b k h w c ->b k c h w', image_data)
@@ -252,9 +294,9 @@ class EpisodicDataset(torch.utils.data.Dataset):
         if self.velocity_control:   
             qvel_data = (qvel_data - self.norm_stats["qvel_mean"]) / self.norm_stats["qvel_std"]
             #print("Loaded data shapes:", image_data.shape, qpos_data.shape, qvel_data.shape, action_data.shape)
-            return image_data, qpos_data, action_data, is_pad, qvel_data
+            return image_data, qpos_data, action_data, is_pad, qvel_data, subtask_label_data
         else:
-            return image_data, qpos_data, action_data, is_pad
+            return image_data, qpos_data, action_data, is_pad, subtask_label_data
 
 def get_norm_stats(dataset_dir, num_episodes):
     all_qpos_data = []
@@ -314,9 +356,9 @@ def get_norm_stats(dataset_dir, num_episodes):
 def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_size_val,chunk_size = 100,context_length=1, velocity_control=False):
     print(f'\nData from: {dataset_dir}\n')
     # obtain train test split
-    train_ratio = 0.8
+    train_ratio = 0.9
     shuffled_indices = np.random.permutation(num_episodes)
-    train_indices = shuffled_indices#[:int(train_ratio * num_episodes)]
+    train_indices = shuffled_indices[:int(train_ratio * num_episodes)]
     val_indices = shuffled_indices[int(train_ratio * num_episodes):]
 
     # obtain normalization stats for qpos and action
@@ -325,8 +367,8 @@ def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_s
     # construct dataset and dataloader
     train_dataset = EpisodicDataset(train_indices, dataset_dir, camera_names, norm_stats, chunk_size=chunk_size, context_length=context_length, cache_mode='full', velocity_control=velocity_control)
     val_dataset = EpisodicDataset(val_indices, dataset_dir, camera_names, norm_stats, chunk_size=chunk_size, context_length=context_length, cache_mode='full', velocity_control=velocity_control)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers = 4, prefetch_factor=4, persistent_workers=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=True, num_workers=12, prefetch_factor=4, persistent_workers=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers = 16, prefetch_factor=4, persistent_workers=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=True, num_workers=16, prefetch_factor=4, persistent_workers=True)
 
     return train_dataloader, val_dataloader, norm_stats, train_dataset.is_sim
 

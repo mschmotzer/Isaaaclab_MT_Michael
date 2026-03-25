@@ -5,10 +5,10 @@ cat <<EOT > job.sh
 #!/bin/bash
 
 #SBATCH -n 1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=4
 #SBATCH --gpus=rtx_4090:1
-#SBATCH --time=18:00:00
-#SBATCH --mem-per-cpu=10000
+#SBATCH --time=6:00:00
+#SBATCH --mem-per-cpu=8000
 #SBATCH --tmp=120g
 #SBATCH --mail-type=END,FAIL,BEGIN
 #SBATCH --mail-user=mschmotzer@ethz.ch
@@ -23,4 +23,4 @@ rm job.sh
 
 # Copy all results from node-local scratch to project storage
 # mkdir -p /cluster/project/meboldt/lucas/job_results/
-# rsync -av "$TMPDIR/euler_test_2k.hdf5" /cluster/project/meboldt/lucas/job_results/
+# rsync -av "$TMPDIR/euler_test_2k.hdf5" /cluster/project/meboldt/lucas/job_results/  l.u.c.a.s2001

@@ -182,17 +182,17 @@ class ObjectTableSceneCfgRGB(InteractiveSceneCfg):
             clipping_range=(0.01, 1.5)  # near/far plane
         ),
         offset=TiledCameraCfg.OffsetCfg(
-                        pos=[0.7, -0.4, 0.40],  # adjust height as neededpos=[1.0, 0.0, 0.25],#
-                      rot=[0.462, -0.800, -0.331, 0.191] # rot= [0.5, -0.5, -0.5, 0.5]#
+                        pos=[0.6, -0.3, 0.20],  # adjust height as neededpos=[1.0, 0.0, 0.25],#
+                      rot=[ 0.496, -0.859, -0.113, 0.065 ]# rot= [0.5, -0.5, -0.5, 0.5]#
 
         ),
     )
 
-    camera3: TiledCameraCfg =  TiledCameraCfg(
+    """camera3: TiledCameraCfg =  TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0/zed_mini_cam3",
         update_period=0.0025,
-        height=1*240,
-        width=1*320,
+        height=2*240,
+        width=2*320,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=2.1,             # 4 mm lens
@@ -206,7 +206,7 @@ class ObjectTableSceneCfgRGB(InteractiveSceneCfg):
                         rot=[0.7071, -0.7071, 0.0, 0.0]#0.524, -0.679, -0.500, 0.277]
 
         ),
-    )
+    )"""
     
 
     # lights
@@ -310,25 +310,25 @@ class ObservationsCfgRGB:
         """Observations for policy group with state values."""
 
         # Implement observation noise -> Simulate state estimation errors
-        #object = ObsTerm(func=mdp.object_obs_with_noise,
-        #               params={"position_noise_std": 0.0075 , "orientation_noise_std": 0.01})
-        #eef_pos = ObsTerm(func=mdp.ee_frame_pos_with_noise,
-        #                params={"noise_std": 0.000})
-        #eef_quat = ObsTerm(func=mdp.ee_frame_quat_with_noise,
-        #                params={"noise_std": 0.000})
-        #gripper_pos = ObsTerm(func=mdp.gripper_pos_with_noise,
-        #                params={"noise_std": 0.0000})
+        object = ObsTerm(func=mdp.object_obs_with_noise,
+                       params={"position_noise_std": 0.01 , "orientation_noise_std": 0.01})
+        eef_pos = ObsTerm(func=mdp.ee_frame_pos_with_noise,
+                        params={"noise_std": 0.01})
+        eef_quat = ObsTerm(func=mdp.ee_frame_quat_with_noise,
+                        params={"noise_std": 0.01})
+        gripper_pos = ObsTerm(func=mdp.gripper_pos_with_noise,
+                        params={"noise_std": 0.0050})
         
         
-        actions = ObsTerm(func=mdp.last_action)
+        #actions = ObsTerm(func=mdp.last_action)
         joint_pos = ObsTerm(func=mdp.joint_pos)
         joint_vel = ObsTerm(func=mdp.joint_vel)
-        object = ObsTerm(func=mdp.object_obs)
+        #object = ObsTerm(func=mdp.object_obs)
         cube_positions = ObsTerm(func=mdp.cube_positions_in_world_frame)
         cube_orientations = ObsTerm(func=mdp.cube_orientations_in_world_frame)
-        eef_pos = ObsTerm(func=mdp.ee_frame_pos)
-        eef_quat = ObsTerm(func=mdp.ee_frame_quat)
-        gripper_pos = ObsTerm(func=mdp.gripper_pos)
+        #eef_pos = ObsTerm(func=mdp.ee_frame_pos)
+        #eef_quat = ObsTerm(func=mdp.ee_frame_quat)
+        #gripper_pos = ObsTerm(func=mdp.gripper_pos)
         
 
         image = ObsTerm(
@@ -339,11 +339,11 @@ class ObservationsCfgRGB:
             func=mdp.image,
             params={"sensor_cfg": SceneEntityCfg("camera2"), "normalize": False},
         )
-        image3 = ObsTerm(
+        """image3 = ObsTerm(
             func=mdp.image,
             params={"sensor_cfg": SceneEntityCfg("camera3"), "normalize": False},
         )
-        """ 
+         
         img_features = ObsTerm(
             func=mdp.image_features_concat,
             params={
@@ -435,7 +435,7 @@ class DomainRandomizationCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "stiffness_distribution_params": (0.7,1.1),  # ±70% variation
+            "stiffness_distribution_params": (0.7,1.3),  # ±70% variation
             "damping_distribution_params": None,
             "operation": "scale",  # Scale the base values
             "distribution": "uniform",
@@ -494,7 +494,7 @@ class DomainRandomizationCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "latency_steps_range": (0, 1),  # 0-3 timesteps delay (0-150ms at 20Hz)
+            "latency_steps_range": (0, 3),  # 0-3 timesteps delay (0-150ms at 20Hz)
         },
     )
     """randomize_visual_color= EventTerm(
@@ -639,7 +639,7 @@ class StackEnvCfgRGB(ManagerBasedRLEnvCfg):
         """Post initialization."""
         # general settings
         # Control frequency is 20Hz (50ms), decimation is 5, so simulation runs at 100Hz (10ms)
-        self.decimation = 5
+        self.decimation = 10
         self.episode_length_s = 20.0
         # simulation settings
         self.sim.dt = 0.01  # 100Hz

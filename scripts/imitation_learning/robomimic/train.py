@@ -248,12 +248,8 @@ def train(config: Config, device: str, log_dir: str, ckpt_dir: str, video_dir: s
         dataset=trainset,
         sampler=train_sampler,
         batch_size=config.train.batch_size,
-        shuffle=(train_sampler is None),
-        num_workers=2,#config.train.num_data_workers,
-        drop_last=True,
-        #prefetch_factor=1, 
-        worker_init_fn=worker_init_fn,  
-        #persistent_workers=True if config.train.num_data_workers > 0 else False,
+        num_workers=8,#config.train.num_data_workers,
+        persistent_workers=True,
 
 
     )
@@ -383,6 +379,9 @@ def main(args: argparse.Namespace):
         print(f"Loading configuration for task: {args.task}")
         print(gym.envs.registry.keys())
         print(" ")
+        print(gym.spec(args.task).kwargs)
+        print(" ")  
+        print(f"Looking for config entry point key: {cfg_entry_point_key}")
         cfg_entry_point_file = gym.spec(args.task).kwargs.pop(cfg_entry_point_key)
         # check if entry point exists
         if cfg_entry_point_file is None:

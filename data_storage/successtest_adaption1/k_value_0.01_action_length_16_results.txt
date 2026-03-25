@@ -1,0 +1,7 @@
+
+=== Results for k = 0.01, action_length = 16 ===
+
+Successful trials: 60, out of 100 trials
+Success rate: 0.6
+Trial Results: [True, True, False, True, True, True, True, True, True, False, True, False, True, True, False, True, True, False, False, True, False, False, True, False, False, True, False, True, False, True, False, True, False, True, True, False, True, False, True, False, True, True, False, False, False, False, True, False, True, True, False, False, True, False, True, True, True, False, True, True, True, True, False, False, True, False, True, True, False, True, True, True, True, False, True, False, True, False, True, True, True, True, True, False, True, True, True, True, False, True, True, False, False, False, True, True, True, False, True, False]
+

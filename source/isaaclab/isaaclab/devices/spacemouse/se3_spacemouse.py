@@ -117,7 +117,7 @@ class Se3SpaceMouse(DeviceBase):
         """
         rot_vec = Rotation.from_euler("XYZ", self._delta_rot).as_rotvec()
         #convert to quaternion
-        #quaternion = Rotation.from_rotvec(rot_vec).as_quat()
+        rot_vec = Rotation.from_rotvec(rot_vec).as_quat()
 
         command = np.concatenate([self._delta_pos, rot_vec])
         if self.gripper_term:

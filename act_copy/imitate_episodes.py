@@ -3,6 +3,7 @@ import numpy as np
 import os
 import pickle
 import argparse
+import random
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from tqdm import tqdm
@@ -16,6 +17,7 @@ from utils import sample_box_pose, sample_insertion_pose # robot functions
 from utils import compute_dict_mean, set_seed, detach_dict # helper functions
 from policy import ACTPolicy, CNNMLPPolicy
 from visualize_episodes import save_videos
+
 
 
 import IPython
@@ -51,8 +53,9 @@ def main(args):
     lr_backbone = 1e-5
     backbone = 'resnet18'
     if policy_class == 'ACT':
-        enc_layers = 4
-        dec_layers = 6
+        enc_layers = 6
+        enc_decoder_layers = 6
+        dec_layers = 9
         nheads = 8
         policy_config = {'lr': args['lr'],
                          'num_queries': args['chunk_size'],
@@ -62,6 +65,7 @@ def main(args):
                          'lr_backbone': lr_backbone,
                          'backbone': backbone,
                          'enc_layers': enc_layers,
+                         'enc_decoder_layers': enc_decoder_layers,
                          'dec_layers': dec_layers,
                          'nheads': nheads,
                          'camera_names': camera_names,
@@ -109,7 +113,7 @@ def main(args):
         print()
         exit()
 
-    train_dataloader, val_dataloader, stats, _ = load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_size_val, chunk_size=args['chunk_size'], velocity_control=args["velocity_control"], context_length=args["context_length"])
+    train_dataloader, val_dataloader, stats, _ = load_data(dataset_dir, num_episodes, camera_names, batch_size_train, int(batch_size_val/2), chunk_size=args['chunk_size'], velocity_control=args["velocity_control"], context_length=args["context_length"])
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
         os.makedirs(ckpt_dir)
@@ -331,61 +335,82 @@ def eval_bc(config, ckpt_name, save_episode=True):
 
 def image_augmentation(image):
     """
-    Apply augmentations to image batch.
-    Input shape: [batch, num_cameras, channels, height, width]
-    e.g., torch.Size([8, 2, 3, 240, 320])
+    Input shape:
+    [batch, num_cameras, chunk, channels, height, width]
     """
     print("Applying image augmentation...", image.shape)
-    batch_size, num_cameras,chunk,channels, height, width = image.shape
-    
-    # Define augmentations
+
+    batch_size, num_cameras, chunk, channels, height, width = image.shape
+
+    # Move chunk next to batch: [batch, chunk, cameras, C, H, W]
+    image = image.permute(0, 2, 1, 3, 4, 5)
+
+    # Merge batch and chunk
+    image = image.reshape(
+        batch_size * chunk, num_cameras, channels, height, width
+    )
+
+    # Augmentations
     color_jitter = transforms.ColorJitter(
         brightness=0.3,
         contrast=0.3,
         saturation=0.3,
         hue=0.3
     )
+
     gaussian_blur = transforms.GaussianBlur(
         kernel_size=5,
         sigma=(0.1, 5.0)
     )
-    
-    # Random resized crop for camera 2 (keeps dimensions)
+
     random_crop = transforms.RandomResizedCrop(
         size=(height, width),
-        scale=(0.8, 1.0),  # Crop 80-100% of the image
-        ratio=(0.9, 1.1)   # Keep aspect ratio close to original
+        scale=(0.8, 1.0),
+        ratio=(0.9, 1.1)
     )
-    
-    # Process camera 1 (index 0): color jitter + gaussian blur
-    cam1 = image[:, 0]  # [batch, channels, height, width]
+
+    # Camera 1
+    cam1 = image[:, 0]  # [B*chunk, C, H, W]
     cam1 = color_jitter(cam1)
     cam1 = gaussian_blur(cam1)
-    cam1 = random_crop(cam1)
 
-    # Process camera 2 (index 1): color jitter + gaussian blur + random crop
-    cam2 = image[:, 1]  # [batch, channels, height, width]
+    # Camera 2
+    cam2 = image[:, 1]
     cam2 = color_jitter(cam2)
     cam2 = gaussian_blur(cam2)
     cam2 = random_crop(cam2)
-    
-    # Stack back to original shape: [batch, num_cameras, channels, height, width]
-    augmented_images = torch.stack([cam1, cam2], dim=1)
-    return augmented_images
+
+    # Stack cameras back
+    augmented = torch.stack([cam1, cam2], dim=1)
+
+    # Restore original shape
+    augmented = augmented.reshape(
+        batch_size, chunk, num_cameras, channels, height, width
+    )
+
+    # Put dimensions back to original order
+    augmented = augmented.permute(0, 2, 1, 3, 4, 5)
+
+    return augmented
+
 
 def forward_pass(data, policy, image_aug=False, epoch = 0):
-    if len(data) == 4:
-        image_data, qpos_data, action_data, is_pad = data
+    if len(data) == 5:
+        image_data, qpos_data, action_data, is_pad, subtask_label = data
         if image_aug:
-            image_data = image_augmentation(image_data)
-        image_data, qpos_data, action_data, is_pad = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda()
-        return policy(qpos_data, image_data, action_data, is_pad,epoch=epoch)
+            result = random.choices([True, False], weights=[0.25, 0.75])[0]
+            if result:
+                image_data = image_augmentation(image_data)
+        image_data, qpos_data, action_data, is_pad, subtask_label = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda(), subtask_label.cuda()
+        return policy(qpos_data, image_data, action_data, is_pad, subtask_label=subtask_label, epoch=epoch)
     else:
-        image_data, qpos_data, action_data, is_pad, qvel_data = data
+        image_data, qpos_data, action_data, is_pad, qvel_data, subtask_label = data
         if image_aug:
-            image_data = image_augmentation(image_data)
-        image_data, qpos_data, action_data, is_pad, qvel_data = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda(), qvel_data.cuda()
-        return policy(qpos_data, image_data, action_data, is_pad, qvel =qvel_data,epoch=epoch)
+            result = random.choices([True, False], weights=[0.25, 0.75])[0]
+            if result:
+                image_data = image_augmentation(image_data)
+        image_data, qpos_data, action_data, is_pad, qvel_data, subtask_label = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda(), qvel_data.cuda(), subtask_label.cuda()
+        return policy(qpos_data, image_data, action_data, is_pad, qvel =qvel_data, subtask_label=subtask_label, epoch=epoch)
 
 
 def train_bc(train_dataloader, val_dataloader, config):
@@ -399,9 +424,9 @@ def train_bc(train_dataloader, val_dataloader, config):
     set_seed(seed)
 
     policy = make_policy(policy_class, policy_config)
-    if policy_config['pretrained'] is not None:
+    """if policy_config['pretrained'] is not None:
             policy.load_state_dict(torch.load(policy_config['pretrained']))
-            print("Loaded pretrained model from ", policy_config['pretrained'])
+            print("Loaded pretrained model from ", policy_config['pretrained'])"""
     policy.cuda()
     optimizer = make_optimizer(policy_class, policy)
 
@@ -425,7 +450,7 @@ def train_bc(train_dataloader, val_dataloader, config):
             if epoch_val_loss < min_val_loss:
                 min_val_loss = epoch_val_loss
                 best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
-        print(f'Val loss:   {epoch_val_loss:.5f}')
+        print(f'Val loss:   {epoch_val_loss}')
         summary_string = ''
         for k, v in epoch_summary.items():
             summary_string += f'{k}: {v.item():.3f} '
@@ -443,9 +468,10 @@ def train_bc(train_dataloader, val_dataloader, config):
             forward_dict = forward_pass(data, policy, image_aug=image_aug, epoch=epoch)
             # backward
             loss = forward_dict['loss']
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            optimizer.zero_grad()
+            
             train_history.append(detach_dict(forward_dict))
             #print("Forward + Backward time:", time.time() - start_time)
             start_time = time.time()
@@ -458,7 +484,7 @@ def train_bc(train_dataloader, val_dataloader, config):
             summary_string += f'{k}: {v.item():.3f} '
         print(summary_string)
 
-        if epoch % 100 == 0:
+        if epoch % 40 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
             plot_history(train_history, validation_history, epoch, ckpt_dir, seed)

@@ -293,9 +293,9 @@ def main():
         device_name = device_name.lower()
         nonlocal running_recording_instance
         if device_name == "keyboard":
-            return Se3Keyboard(pos_sensitivity=1, rot_sensitivity=0.005)
+            return Se3Keyboard(pos_sensitivity=0.75, rot_sensitivity=0.005)
         elif device_name == "spacemouse":
-            return Se3SpaceMouse(cfg=Se3SpaceMouseCfg(pos_sensitivity=0.1, rot_sensitivity=0.00))
+            return Se3SpaceMouse(cfg=Se3SpaceMouseCfg(pos_sensitivity=0.02, rot_sensitivity=0.00))
         elif "dualhandtracking_abs" in device_name and "GR1T2" in env.cfg.env_name:
             # Create GR1T2 retargeter with desired configuration
             gr1t2_retargeter = GR1T2Retargeter(
@@ -354,16 +354,16 @@ def main():
     env.sim.reset()
     obs, _ = env.reset()
     teleop_interface.reset()
-    #pos = obs['policy']['eef_pos'][0]
-    #quaternion = obs['policy']['eef_quat'][0]
-    #action_start = torch.cat(
-    #        [
-    #            pos.detach().clone(),
-    #            quaternion.detach().clone(),
-    #            torch.ones(1, device=env.device),
-    #        ],
-    #        dim=0,
-    #)  
+    pos = obs['policy']['eef_pos'][0]
+    quaternion = obs['policy']['eef_quat'][0]
+    action_start = torch.cat(
+            [
+                pos.detach().clone(),
+                quaternion.detach().clone(),
+                torch.ones(1, device=env.device),
+            ],
+            dim=0,
+    )  
     # simulate environment -- run everything in inference mode
     current_recorded_demo_count = 0
     success_step_count = 0
@@ -385,14 +385,14 @@ def main():
             with torch.inference_mode():
                 # get data from teleop device
                 action = teleop_interface.advance().to(env.device)
-                #action_start[:3] += action[:3]*10
-                #action_start[-1] = action[-1]
+                action_start[:3] += action[:3]
+                action_start[-1] = action[-1]
                 # perform action on environment
                 if running_recording_instance:
                     # compute actions based on environment
                     #actions = pre_process_actions(teleop_data, env.num_envs, env.device)
-                    actions = action.repeat(env.num_envs, 1)
-                    print("Action:", actions)
+                    actions = action_start.repeat(env.num_envs, 1)
+                    print("joint state:", env.scene['robot'].data.joint_pos)
                     obv = env.step(actions)
                     if subtasks is not None:
                         if subtasks == {}:
@@ -426,16 +426,16 @@ def main():
                     obs, _ = env.reset()
                     teleop_interface.reset()
 
-                    #pos = obs['policy']['eef_pos'][0]
-                    #quaternion = obs['policy']['eef_quat'][0]
-                    #action_start = torch.cat(
-                    #    [
-                    #        pos.detach().clone(),
-                    #        quaternion.detach().clone(),
-                    #        torch.ones(1, device=env.device),
-                    #    ],
-                    #    dim=0,
-                    #) 
+                    pos = obs['policy']['eef_pos'][0]
+                    quaternion = obs['policy']['eef_quat'][0]
+                    action_start = torch.cat(
+                        [
+                            pos.detach().clone(),
+                            quaternion.detach().clone(),
+                            torch.ones(1, device=env.device),
+                        ],
+                        dim=0,
+                    ) 
                     should_reset_recording_instance = False
                     success_step_count = 0
                     instruction_display.show_demo(label_text)
