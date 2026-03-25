@@ -1,8 +1,6 @@
 
 In my thesis I used the following Isaaclab folder, all adapted files can be found there:
 
-	https://github.com/mschmotzer/Isaaaclab_MT_Michael
-	
 	inside scripts/tools
 		different tools can be found for trajectory replay and so on
 
