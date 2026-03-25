@@ -15,7 +15,7 @@ In my thesis I used the following Isaaclab folder, all adapted files can be foun
 	
 	if actions chunks should be used followed the following GitHub:
 		https://github.com/mschmotzer/transformer_robomimic
-A cluster guide can be found in the Cluster Guide.md file
+A cluster guide can be found in the CLUSTER_GUIDE.md file
 
 ![Isaac Lab](docs/source/_static/isaaclab.jpg)
 
