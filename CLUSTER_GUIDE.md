@@ -38,16 +38,16 @@ Edit `docker/cluster/.env.cluster` in your local Isaac Lab repo. The config used
 CLUSTER_JOB_SCHEDULER=SLURM
 
 # Isaac Sim cache directory on the cluster (must end in docker-isaac-sim)
-CLUSTER_ISAAC_SIM_CACHE_DIR=/cluster/project/meboldt/student_Lucas_Michael/docker-isaac-sim
+CLUSTER_ISAAC_SIM_CACHE_DIR=/cluster/project/.../docker-isaac-sim
 
 # Isaac Lab directory on the cluster (must end in isaaclab)
-CLUSTER_ISAACLAB_DIR=/cluster/project/meboldt/student_Lucas_Michael/isaaclab
+CLUSTER_ISAACLAB_DIR=/cluster/project/.../isaaclab
 
 # Cluster login
-CLUSTER_LOGIN=gimenol@euler.ethz.ch
+CLUSTER_LOGIN=username@euler.ethz.ch
 
 # Directory on the cluster where the .sif Singularity image is stored
-CLUSTER_SIF_PATH=/cluster/project/meboldt/student_Lucas_Michael/scratch
+CLUSTER_SIF_PATH=/cluster/project/.../scratch
 
 # Whether to delete the temporary code copy after the job finishes
 REMOVE_CODE_COPY_AFTER_JOB=false
