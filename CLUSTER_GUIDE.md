@@ -38,16 +38,16 @@ Edit `docker/cluster/.env.cluster` in your local Isaac Lab repo. The config used
 CLUSTER_JOB_SCHEDULER=SLURM
 
 # Isaac Sim cache directory on the cluster (must end in docker-isaac-sim)
-CLUSTER_ISAAC_SIM_CACHE_DIR=/cluster/project/.../docker-isaac-sim
+CLUSTER_ISAAC_SIM_CACHE_DIR=/cluster/project/meboldt/student_Lucas_Michael/docker-isaac-sim
 
 # Isaac Lab directory on the cluster (must end in isaaclab)
-CLUSTER_ISAACLAB_DIR=/cluster/project/.../isaaclab
+CLUSTER_ISAACLAB_DIR=/cluster/project/meboldt/student_Lucas_Michael/isaaclab
 
 # Cluster login
-CLUSTER_LOGIN=username@euler.ethz.ch
+CLUSTER_LOGIN=gimenol@euler.ethz.ch
 
 # Directory on the cluster where the .sif Singularity image is stored
-CLUSTER_SIF_PATH=/cluster/project/.../scratch
+CLUSTER_SIF_PATH=/cluster/project/meboldt/student_Lucas_Michael/scratch
 
 # Whether to delete the temporary code copy after the job finishes
 REMOVE_CODE_COPY_AFTER_JOB=false
@@ -109,7 +109,46 @@ This converts the Docker image to a `.sif` file under `docker/exports/` and copi
 
 ---
 
-## Step 5 — Submit a training job
+## Step 5 — Upload the dataset to `data_storage/`
+
+The dataset HDF5 file must be present on the cluster inside the persistent `data_storage/` directory before a training job is submitted. Copy it from your local machine using `scp` or `rsync`:
+
+```bash
+# scp — simple single file transfer
+scp /path/to/local/dataset.hdf5 \
+    username@euler.ethz.ch:/cluster/project/meboldt/student_Lucas_Michael/isaaclab/data_storage/datasets/dataset.hdf5
+
+# rsync — preferred for large files, resumes on interruption
+rsync -avP /path/to/local/dataset.hdf5 \
+    username@euler.ethz.ch:/cluster/project/meboldt/student_Lucas_Michael/isaaclab/data_storage/datasets/dataset.hdf5
+```
+
+The destination path on the cluster is `$CLUSTER_ISAACLAB_DIR/data_storage/`, which is bind-mounted into the container at `/workspace/isaaclab/data_storage/`. Any subdirectory structure you create under `data_storage/` (e.g. `datasets/`) is preserved inside the container.
+
+> **Important — update `DATA_DIR` in `act_copy/constants.py` before submitting.**
+>
+> `constants.py` defines the path to the dataset file that `imitate_episodes.py` reads via the task config. The path must be **relative to `/workspace/isaaclab/`** (the Isaac Lab root inside the container), because that is the working directory when the job runs.
+>
+> ```python
+> # act_copy/constants.py
+>
+> # Path is relative to /workspace/isaaclab/ inside the container.
+> # /workspace/isaaclab/data_storage/ is bind-mounted from
+> # $CLUSTER_ISAACLAB_DIR/data_storage/ on the cluster.
+>
+> DATA_DIR = 'data_storage/datasets/mimic_800_simplfied_task.hdf5'
+> ```
+>
+> Make sure this path matches exactly where you uploaded the file. For example, if you uploaded to
+> `$CLUSTER_ISAACLAB_DIR/data_storage/datasets/my_dataset.hdf5`, set:
+> ```python
+> DATA_DIR = 'data_storage/datasets/my_dataset.hdf5'
+> ```
+> Also update `num_episodes` in the corresponding task config block to match the actual number of demos in your HDF5 file.
+
+---
+
+## Step 6 — Submit a training job
 
 From your **local terminal**, run `cluster_interface.sh job` followed by all arguments that will be forwarded to `CLUSTER_PYTHON_EXECUTABLE`. The script automatically syncs your latest local code to a timestamped copy on the cluster and submits a SLURM job.
 
@@ -165,7 +204,7 @@ The `CLUSTER_PYTHON_EXECUTABLE` in `.env.cluster` determines which script runs. 
 
 ---
 
-## SLURM job script — `submit_job_slurm.sh`
+### SLURM job script — `submit_job_slurm.sh`
 
 The file `docker/cluster/submit_job_slurm.sh` defines the SLURM resource request and calls `run_singularity.sh` inside the job. The version used for this project:
 
@@ -261,5 +300,7 @@ Each job submission creates a new timestamped code directory so multiple runs wi
 | Create data dir | `mkdir -p ~/isaaclab/data_storage` | First time |
 | Build Docker image | `./docker/container.py start && ./docker/container.py stop` | Once / after image changes |
 | Push Singularity image | `./docker/cluster/cluster_interface.sh push` | Once / after image changes |
+| Upload dataset | `rsync -avP dataset.hdf5 username@euler.ethz.ch:.../data_storage/datasets/` | Per dataset |
+| Update `DATA_DIR` | Edit `act_copy/constants.py` to match upload path | Per dataset |
 | Submit ACT training job | `./docker/cluster/cluster_interface.sh job [args...]` | Every run |
 | Check job status | `ssh username@euler.ethz.ch squeue --me` | Any time |
