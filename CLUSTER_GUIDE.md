@@ -41,13 +41,13 @@ CLUSTER_JOB_SCHEDULER=SLURM
 CLUSTER_ISAAC_SIM_CACHE_DIR=/cluster/project/meboldt/student_Lucas_Michael/docker-isaac-sim
 
 # Isaac Lab directory on the cluster (must end in isaaclab)
-CLUSTER_ISAACLAB_DIR=/cluster/project/meboldt/student_Lucas_Michael/isaaclab
+CLUSTER_ISAACLAB_DIR=/cluster/project/.../isaaclab
 
 # Cluster login
-CLUSTER_LOGIN=gimenol@euler.ethz.ch
+CLUSTER_LOGIN=username@euler.ethz.ch
 
 # Directory on the cluster where the .sif Singularity image is stored
-CLUSTER_SIF_PATH=/cluster/project/meboldt/student_Lucas_Michael/scratch
+CLUSTER_SIF_PATH=/cluster/project/.../scratch
 
 # Whether to delete the temporary code copy after the job finishes
 REMOVE_CODE_COPY_AFTER_JOB=false
