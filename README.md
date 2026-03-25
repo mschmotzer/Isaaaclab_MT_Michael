@@ -1,3 +1,23 @@
+
+In my thesis I used the following Isaaclab folder, all adapted files can be found there:
+
+	https://github.com/mschmotzer/Isaaaclab_MT_Michael
+	
+	inside scripts/tools
+		different tools can be found for trajectory replay and so on
+
+	inside scripts/imitation_learning/robomimic/
+		different file can be found for running different models, also the act_adapted models
+
+	inside source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulation/stack
+		the modified envirnment can be found with the added cameras
+
+	inside source/isaaclab_mimic/isaaclab_mimic/datagen
+		different files can be found for data generation including bottleneck/ juicer 							(https://imitation-juicer.github.io/)
+	
+	if actions chunks should be used followed the following GitHub:
+		https://github.com/mschmotzer/transformer_robomimic
+
 ![Isaac Lab](docs/source/_static/isaaclab.jpg)
 
 ---
